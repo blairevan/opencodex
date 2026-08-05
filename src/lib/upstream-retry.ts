@@ -21,13 +21,14 @@ const RESET_RETRY_MAX_ATTEMPTS = 3;
 const RESET_RETRY_BASE_DELAY_MS = 150;
 const RESET_RETRY_MAX_DELAY_MS = 1_000;
 
-// Transient-5xx status retry layer (pre-stream only; devlog/_plan/260716_claudecode_hardening/010).
-const TRANSIENT_RETRY_MAX_ATTEMPTS = 3; // 1 initial + 2 retries
-const TRANSIENT_RETRY_BASE_DELAY_MS = 400;
-const TRANSIENT_RETRY_MAX_DELAY_MS = 5_000;
+// Transient status retry layer (pre-stream only; devlog/_plan/260716_claudecode_hardening/010).
+// Raised to 4 attempts (1 initial + 3 retries) and 20s max delay for 429 rate-limit windows.
+const TRANSIENT_RETRY_MAX_ATTEMPTS = 4; // 1 initial + 3 retries
+const TRANSIENT_RETRY_BASE_DELAY_MS = 1_000;
+const TRANSIENT_RETRY_MAX_DELAY_MS = 20_000;
 // A failed attempt slower than this is the "slow 502" incident shape (191s observed on
 // 2026-07-15): retrying it only duplicates upstream load past client timeouts — return it.
-const TRANSIENT_RETRY_SLOW_ATTEMPT_MS = 15_000;
+const TRANSIENT_RETRY_SLOW_ATTEMPT_MS = 60_000;
 
 /**
  * Upstream statuses treated as transient: gateway errors and Cloudflare 52x.
