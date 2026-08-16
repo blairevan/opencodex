@@ -962,6 +962,19 @@ export interface OcxConfig {
    * Failover on 429 + sticky affinity; new sessions may pick lowest known 5h usage.
    * Experimental — see docs and GUI warning before enabling.
    */
+  /**
+   * Opt-in Google Antigravity OAuth account pool. Default OFF.
+   * Failover on 429 + sticky affinity; new sessions pick lowest known Gemini/Claude usage.
+   */
+  antigravityAccountPool?: {
+    enabled?: boolean;
+    /** Usage % threshold for new-session auto-pick. Default 80. 0 = disabled (affinity/active only). */
+    autoSwitchThreshold?: number;
+    /** New-session rotation strategy. Default quota. */
+    strategy?: OcxAccountPoolRotationStrategy;
+    /** Successful new-session binds retained on one round-robin selection. Default 1; range 1..100. */
+    stickyLimit?: number;
+  };
   anthropicAccountPool?: {
     enabled?: boolean;
     /** Usage % threshold for new-session auto-pick. Default 80. 0 = disabled (affinity/active only). */

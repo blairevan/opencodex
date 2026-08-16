@@ -1,0 +1,139 @@
+import { describe, expect, test, beforeEach } from "bun:test";
+import {
+  isAntigravityAccountPoolEnabled,
+  antigravityAutoSwitchThreshold,
+  resolveAntigravityAccountForSession,
+  bindAntigravitySessionAffinity,
+  clearAntigravityAccountCooldown,
+  clearAntigravityAccountPoolState,
+  rotateAntigravityAccountOn429,
+  getAntigravityAccountHealthSnapshot,
+  getAntigravityPoolRetryAfterSeconds,
+  formatAntigravityProviderForLog,
+  antigravitySessionKeyFromParts,
+} from "../src/oauth/antigravity-routing";
+import { setCachedProviderAccountQuotaForTests } from "../src/providers/quota";
+import { mutateStore } from "../src/oauth/store";
+import type { OcxConfig } from "../src/types";
+
+describe("antigravity-routing", () => {
+  const configPoolEnabled: OcxConfig = {
+    port: 10100,
+    defaultProvider: "openai",
+    providers: {},
+    antigravityAccountPool: {
+      enabled: true,
+      autoSwitchThreshold: 80,
+      strategy: "quota",
+    },
+  };
+
+  beforeEach(async () => {
+    clearAntigravityAccountPoolState();
+    // Seed auth.json with two mock antigravity accounts
+    await mutateStore(store => {
+      store["google-antigravity"] = {
+        activeAccountId: "acc-1",
+        accounts: [
+          {
+            id: "acc-1",
+            credential: {
+              access: "token-1",
+              refresh: "refresh-1",
+              expires: Date.now() + 3600_000,
+              email: "user1@gmail.com",
+              projectId: "proj-1",
+            },
+          },
+          {
+            id: "acc-2",
+            credential: {
+              access: "token-2",
+              refresh: "refresh-2",
+              expires: Date.now() + 3600_000,
+              email: "user2@gmail.com",
+              projectId: "proj-2",
+            },
+          },
+        ],
+      };
+    });
+  });
+
+  test("returns pool-disabled when pool is not enabled", () => {
+    const res = resolveAntigravityAccountForSession("s1", "gemini-3.1-pro", {});
+    expect(res.accountId).toBe("acc-1");
+    expect(res.reason).toBe("pool-disabled");
+  });
+
+  test("maintains session affinity across requests", () => {
+    bindAntigravitySessionAffinity("session-123", "acc-2");
+    const res = resolveAntigravityAccountForSession("session-123", "gemini-3.1-pro", configPoolEnabled);
+    expect(res.accountId).toBe("acc-2");
+    expect(res.reason).toBe("affinity");
+  });
+
+  test("auto-switches to lowest usage account when active exceeds threshold (Gemini model)", () => {
+    // acc-1 has 85% Gem usage (exceeds 80% threshold)
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [{ label: "Gem", percent: 85 }, { label: "Cla", percent: 20 }],
+      updatedAt: Date.now(),
+    });
+    // acc-2 has 30% Gem usage
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-2", {
+      customWindows: [{ label: "Gem", percent: 30 }, { label: "Cla", percent: 90 }],
+      updatedAt: Date.now(),
+    });
+
+    const res = resolveAntigravityAccountForSession("new-session", "gemini-3.1-pro", configPoolEnabled);
+    expect(res.accountId).toBe("acc-2");
+    expect(res.reason).toBe("lowest-usage");
+  });
+
+  test("auto-switches based on Claude usage when model is Claude on Antigravity", () => {
+    // acc-1 has 20% Gem, 90% Cla (exceeds Cla threshold)
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [{ label: "Gem", percent: 20 }, { label: "Cla", percent: 90 }],
+      updatedAt: Date.now(),
+    });
+    // acc-2 has 80% Gem, 25% Cla (healthy Cla)
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-2", {
+      customWindows: [{ label: "Gem", percent: 80 }, { label: "Cla", percent: 25 }],
+      updatedAt: Date.now(),
+    });
+
+    const res = resolveAntigravityAccountForSession("new-session-2", "claude-3.7-sonnet", configPoolEnabled);
+    expect(res.accountId).toBe("acc-2");
+    expect(res.reason).toBe("lowest-usage");
+  });
+
+  test("429 failover cools the failed account and fails over to healthy account", () => {
+    const next = rotateAntigravityAccountOn429(
+      configPoolEnabled,
+      "acc-1",
+      "120",
+      "session-failover",
+      "gemini-3.1-pro",
+    );
+    expect(next).toBe("acc-2");
+    expect(getAntigravityAccountHealthSnapshot("acc-1")).not.toBeNull();
+    expect(getAntigravityPoolRetryAfterSeconds()).toBeGreaterThan(0);
+  });
+
+  test("clearing cooldown restores account eligibility", () => {
+    rotateAntigravityAccountOn429(configPoolEnabled, "acc-1", "60", "s1");
+    expect(getAntigravityAccountHealthSnapshot("acc-1")).not.toBeNull();
+    clearAntigravityAccountCooldown("acc-1");
+    expect(getAntigravityAccountHealthSnapshot("acc-1")).toBeNull();
+  });
+
+  test("formats provider log label with account ordinal", () => {
+    const label = formatAntigravityProviderForLog("google-antigravity", "acc-1", configPoolEnabled);
+    expect(label).toContain("google-antigravity-");
+  });
+
+  test("extracts session key from parts", () => {
+    const key = antigravitySessionKeyFromParts({ clientThreadId: "thread-abc-123" });
+    expect(key).toBe("thread-abc-123");
+  });
+});

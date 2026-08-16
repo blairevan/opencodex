@@ -1311,7 +1311,7 @@ export interface ProviderAccountQuota {
 
 /** Providers whose per-account quota can be probed. Extend as other OAuth APIs are covered. */
 export function supportsPerAccountQuota(provider: string): boolean {
-  return provider === "anthropic";
+  return provider === "anthropic" || provider === "google-antigravity";
 }
 
 function accountCacheKey(provider: string, accountId: string): string {
@@ -1430,8 +1430,22 @@ async function fetchAccountQuota(
 
   const probe = (async (): Promise<AccountQuotaCacheEntry> => {
     try {
-      const token = await getTokenForAccountQuotaProbe(provider, accountId);
-      const quota = await fetchAnthropicUsageQuota(token);
+      let quota: ProviderQuota | null = null;
+      if (provider === "anthropic") {
+        const token = await getTokenForAccountQuotaProbe(provider, accountId);
+        quota = await fetchAnthropicUsageQuota(token);
+      } else if (provider === "google-antigravity") {
+        const credential = getAccountCredential("google-antigravity", accountId);
+        if (!credential?.projectId) {
+          throw new Error("missing projectId on antigravity account");
+        }
+        const token = await getTokenForAccountQuotaProbe(provider, accountId);
+        const baseUrl = "https://daily-cloudcode-pa.googleapis.com";
+        const result = await fetchAntigravityUserQuotaWithFallback(baseUrl, token, credential.projectId);
+        if (result) {
+          quota = result.quota;
+        }
+      }
       if (!quota) {
         // Preserve last-good bars and mark unavailable; advance TTL so failures
         // negative-cache instead of re-probing on every GUI poll.
@@ -1843,32 +1857,151 @@ function antigravityUsedPercent(quotaInfo: Record<string, unknown>): number | un
   return normalizePercent(100 - remaining);
 }
 
-async function fetchAntigravityQuota(provider: string, config: OcxProviderConfig): Promise<ProviderQuotaReport | null> {
-  const credential = getCredential("google-antigravity");
-  if (!credential?.projectId) return null;
-  let accessToken: string;
+export function parseAntigravityBucketsQuota(buckets: Record<string, unknown>[]): ProviderQuota | null {
+  const windows = new Map<string, ProviderQuotaWindow>();
+  for (const bucket of buckets) {
+    const modelId = typeof bucket.modelId === "string" ? bucket.modelId : "";
+    const label = classifyAntigravityFamily(modelId, {}, bucket);
+    if (!label) continue;
+    const percent = antigravityUsedPercent(bucket);
+    if (percent === undefined) continue;
+    const resetAt = normalizeResetAt(bucket.resetTime);
+    const existing = windows.get(label);
+    if (!existing || percent > existing.percent) {
+      windows.set(label, {
+        label,
+        percent,
+        ...(resetAt !== undefined ? { resetAt } : {}),
+      });
+    }
+  }
+
+  const customWindows = ["Gem", "Cla"].flatMap(label => {
+    const window = windows.get(label);
+    return window ? [window] : [];
+  });
+  if (customWindows.length === 0) return null;
+  return {
+    customWindows,
+    updatedAt: Date.now(),
+  };
+}
+
+export function parseAntigravityQuotaSummary(summary: Record<string, unknown>): ProviderQuota | null {
+  const groups = summary.groups;
+  if (!Array.isArray(groups)) return null;
+  const customWindows: ProviderQuotaWindow[] = [];
+
+  for (const group of groups) {
+    if (!group || typeof group !== "object") continue;
+    const groupName = typeof group.displayName === "string" ? group.displayName : "";
+    const isGem = /gemini/i.test(groupName);
+    const isCla = /claude|gpt/i.test(groupName);
+    const familyPrefix = isGem ? "Gemini" : isCla ? "Claude/GPT" : groupName || "Model";
+
+    const buckets = group.buckets;
+    if (!Array.isArray(buckets)) continue;
+
+    for (const bucket of buckets) {
+      if (!bucket || typeof bucket !== "object") continue;
+      const percent = antigravityUsedPercent(bucket);
+      if (percent === undefined) continue;
+      const resetAt = normalizeResetAt(bucket.resetTime);
+      const isWeekly = bucket.window === "weekly" || /weekly/i.test(bucket.displayName ?? "");
+      const is5h = bucket.window === "5h" || /5-hour|5h|five hour/i.test(bucket.displayName ?? "");
+      const windowSuffix = isWeekly ? "Weekly" : is5h ? "5h" : bucket.window ?? "Quota";
+      const label = `${familyPrefix} (${windowSuffix})`;
+
+      customWindows.push({
+        label,
+        percent,
+        ...(resetAt !== undefined ? { resetAt } : {}),
+      });
+    }
+  }
+
+  if (customWindows.length === 0) return null;
+  return {
+    customWindows,
+    updatedAt: Date.now(),
+  };
+}
+
+async function fetchAntigravityUserQuotaWithFallback(
+  baseUrl: string,
+  token: string,
+  projectId: string,
+): Promise<{ quota: ProviderQuota; source: string } | null> {
+  const cleanBaseUrl = (baseUrl || "https://cloudcode-pa.googleapis.com").replace(/\/+$/, "");
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": antigravityUserAgent(),
+    Authorization: `Bearer ${token}`,
+  };
+  const body = JSON.stringify({ project: projectId });
+
+  // 1. Try retrieveUserQuotaSummary first (supports both Weekly and 5-Hour limits per group)
   try {
-    accessToken = await getValidAccessToken("google-antigravity");
+    const summaryResp = await fetch(`${cleanBaseUrl}/v1internal:retrieveUserQuotaSummary`, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (summaryResp.ok) {
+      const raw = asRecord(await readQuotaJson(summaryResp));
+      if (raw && Array.isArray(raw.groups)) {
+        const quota = parseAntigravityQuotaSummary(raw);
+        if (quota) return { quota, source: "google-antigravity:retrieveUserQuotaSummary" };
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  // 2. Try retrieveUserQuota (flat model buckets)
+  try {
+    const quotaResp = await fetch(`${cleanBaseUrl}/v1internal:retrieveUserQuota`, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (quotaResp.ok) {
+      const raw = asRecord(await readQuotaJson(quotaResp));
+      if (raw && Array.isArray(raw.buckets)) {
+        const quota = parseAntigravityBucketsQuota(raw.buckets as Record<string, unknown>[]);
+        if (quota) return { quota, source: "google-antigravity:retrieveUserQuota" };
+      }
+    }
+  } catch {
+    // fall through to fetchAvailableModels
+  }
+
+  // 3. Fall back to fetchAvailableModels
+  try {
+    const modelsResp = await fetch(`${cleanBaseUrl}/v1internal:fetchAvailableModels`, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (modelsResp.ok) {
+      const raw = asRecord(await readQuotaJson(modelsResp));
+      const models = asRecord(raw?.models);
+      if (models) {
+        const quota = parseAntigravityModelsQuota(models);
+        if (quota) return { quota, source: "google-antigravity:fetchAvailableModels" };
+      }
+    }
   } catch {
     return null;
   }
-  const baseUrl = (config.baseUrl || "https://daily-cloudcode-pa.googleapis.com").replace(/\/+$/, "");
-  const response = await fetch(`${baseUrl}/v1internal:fetchAvailableModels`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "User-Agent": antigravityUserAgent(),
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ project: credential.projectId }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-  if (!response.ok) return null;
-  const body = asRecord(await readQuotaJson(response));
-  const models = asRecord(body?.models);
-  if (!models) return null;
+  return null;
+}
 
+export function parseAntigravityModelsQuota(models: Record<string, unknown>): ProviderQuota | null {
   const windows = new Map<string, ProviderQuotaWindow>();
   for (const [modelId, rawModelInfo] of Object.entries(models)) {
     const modelInfo = asRecord(rawModelInfo);
@@ -1891,10 +2024,39 @@ async function fetchAntigravityQuota(provider: string, config: OcxProviderConfig
     return window ? [window] : [];
   });
   if (customWindows.length === 0) return null;
-  return report(provider, "google-antigravity:fetchAvailableModels", {
+  return {
     customWindows,
     updatedAt: Date.now(),
-  });
+  };
+}
+
+async function fetchAntigravityQuota(provider: string, config: OcxProviderConfig): Promise<ProviderQuotaReport | null> {
+  const probedAccountId = getAccountSet("google-antigravity")?.activeAccountId;
+  const probedAccountKey = probedAccountId ? accountCacheKey("google-antigravity", probedAccountId) : null;
+  const writerGeneration = captureConfigGeneration();
+  const credential = getCredential("google-antigravity");
+  if (!credential?.projectId) return null;
+  let accessToken: string;
+  try {
+    accessToken = await getValidAccessToken("google-antigravity");
+  } catch {
+    return null;
+  }
+  const result = await fetchAntigravityUserQuotaWithFallback(
+    config.baseUrl || "https://daily-cloudcode-pa.googleapis.com",
+    accessToken,
+    credential.projectId,
+  );
+  if (!result) return null;
+
+  if (probedAccountId && probedAccountKey) {
+    const stillOwnsToken = getAccountCredential("google-antigravity", probedAccountId)?.access === accessToken;
+    if (stillOwnsToken && mayCommitAccountQuotaKey(probedAccountKey, writerGeneration)) {
+      accountQuotaCache.set(probedAccountKey, { ts: Date.now(), quota: result.quota });
+    }
+  }
+
+  return report(provider, result.source, result.quota);
 }
 
 async function maybeFetchProviderQuota(

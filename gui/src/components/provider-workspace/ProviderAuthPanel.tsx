@@ -250,8 +250,8 @@ export default function ProviderAuthPanel({
       <div className="pwi-auth-body">
         {isOauth && (
           <>
-            {item.name === "anthropic" && (
-              <AnthropicAccountPoolSettings apiBase={apiBase} accountCount={accounts.length} />
+            {(item.name === "anthropic" || item.name === "google-antigravity") && (
+              <AnthropicAccountPoolSettings provider={item.name as "anthropic" | "google-antigravity"} apiBase={apiBase} accountCount={accounts.length} />
             )}
             {item.name === "google-antigravity" && (
               <div className="pwi-auth-add-key">

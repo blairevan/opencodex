@@ -65,6 +65,18 @@ import {
   UnsupportedOAuthProviderError,
 } from "../../oauth";
 import {
+  ANTIGRAVITY_POOL_MAX_FAILOVERS_PER_REQUEST,
+  antigravitySessionKeyFromParts,
+  bindAntigravitySessionAffinity,
+  formatAntigravityProviderForLog,
+  getAntigravityPoolAccessTokenAndProject,
+  getAntigravityPoolRetryAfterSeconds,
+  isAntigravityAccountPoolEnabled,
+  promoteAntigravityActiveAccount,
+  resolveAntigravityAccountForSession,
+  rotateAntigravityAccountOn429,
+} from "../../oauth/antigravity-routing";
+import {
   ANTHROPIC_POOL_MAX_FAILOVERS_PER_REQUEST,
   anthropicSessionKeyFromParts,
   bindAnthropicSessionAffinity,
@@ -1983,6 +1995,16 @@ async function handleResponsesInner(
   let replayOAuthCredentialSnapshot: Pick<OAuthAccessSnapshot, "accountId" | "generation"> | undefined;
   let anthropicPoolAccountId: string | null = null;
   let anthropicPoolFailovers = 0;
+  let antigravityPoolAccountId: string | null = null;
+  let antigravityPoolFailovers = 0;
+  const antigravitySessionKey = route.providerName === "google-antigravity" && route.provider.authMode === "oauth"
+    ? antigravitySessionKeyFromParts({
+      sessionIdHeader: sessionIdHeaderFromRequest(req.headers),
+      threadIdHeader: req.headers.get("thread-id"),
+      promptCacheKey: typeof parsed.options.promptCacheKey === "string" ? parsed.options.promptCacheKey : null,
+      clientThreadId: typeof parsed._clientThreadId === "string" ? parsed._clientThreadId : null,
+    })
+    : null;
   const anthropicSessionKey = route.providerName === "anthropic" && route.provider.authMode === "oauth"
     ? anthropicSessionKeyFromParts({
       sessionIdHeader: sessionIdHeaderFromRequest(req.headers),
@@ -2014,6 +2036,26 @@ async function handleResponsesInner(
         promoteAnthropicActiveAccount(selection.accountId);
         route.provider = { ...route.provider, apiKey: accessToken };
         logCtx.provider = formatAnthropicProviderForLog("anthropic", selection.accountId, config);
+      } else if (route.providerName === "google-antigravity" && isAntigravityAccountPoolEnabled(config)) {
+        const selection = resolveAntigravityAccountForSession(antigravitySessionKey, route.modelId, config);
+        if (!selection.accountId) {
+          if (selection.reason === "all-cooled") {
+            const retryAfterSec = getAntigravityPoolRetryAfterSeconds();
+            return formatErrorResponse(
+              429,
+              "rate_limit_error",
+              "All Google Antigravity OAuth accounts are temporarily rate-limited",
+              retryAfterSec !== null ? { retryAfter: String(retryAfterSec) } : undefined,
+            );
+          }
+          return formatErrorResponse(401, "authentication_error", "No eligible Google Antigravity OAuth account available");
+        }
+        const cred = await getAntigravityPoolAccessTokenAndProject(selection.accountId);
+        antigravityPoolAccountId = selection.accountId;
+        bindAntigravitySessionAffinity(antigravitySessionKey, selection.accountId);
+        promoteAntigravityActiveAccount(selection.accountId);
+        route.provider = { ...route.provider, apiKey: cred.accessToken, project: cred.projectId };
+        logCtx.provider = formatAntigravityProviderForLog("google-antigravity", selection.accountId, config);
       } else {
         const resolved = await getValidAccessTokenSnapshot(route.providerName);
         replayOAuthCredentialSnapshot = {
@@ -3706,6 +3748,43 @@ async function handleResponsesInner(
           break;
         }
       }
+
+      // Opt-in Google Antigravity OAuth account pool: cool failed account and failover
+      while (
+        upstreamResponse.status === 429
+        && antigravityPoolAccountId
+        && isAntigravityAccountPoolEnabled(config)
+        && antigravityPoolFailovers < ANTIGRAVITY_POOL_MAX_FAILOVERS_PER_REQUEST
+      ) {
+        const nextAccountId = rotateAntigravityAccountOn429(
+          config,
+          antigravityPoolAccountId,
+          upstreamResponse.headers.get("retry-after"),
+          antigravitySessionKey,
+          route.modelId,
+        );
+        if (!nextAccountId) break;
+        try { void upstreamResponse.body?.cancel().catch(() => {}); } catch { /* already consumed/closed */ }
+        try {
+          const cred = await getAntigravityPoolAccessTokenAndProject(nextAccountId);
+          antigravityPoolAccountId = nextAccountId;
+          antigravityPoolFailovers += 1;
+          route.provider = { ...route.provider, apiKey: cred.accessToken, project: cred.projectId };
+          invalidateSameTargetRequest();
+          promoteAntigravityActiveAccount(nextAccountId);
+          logCtx.provider = formatAntigravityProviderForLog("google-antigravity", nextAccountId, config);
+          activeAdapter = resolveAdapter(
+            resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire),
+            config.cacheRetention,
+          );
+          sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.accountLogLabel);
+          const result = await rebuildAndRefetch("antigravity-oauth-429");
+          if ("failed" in result) return result.failed;
+          upstreamResponse = result;
+        } catch {
+          break;
+        }
+      }
       // Anthropic 413 request_too_large: rebuild once with every image one tier lower
       // (spiral guard: single attempt). The biased response re-enters the 429 check above.
       if (shouldAttemptImageTierRetry({
@@ -3996,6 +4075,41 @@ async function handleResponsesInner(
             );
             sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.accountLogLabel);
             nextContinuationRecoveryKind = "anthropic-oauth-429";
+            continue;
+          } catch {
+            // fall through to emit continuation error below
+          }
+        }
+      }
+      if (
+        response.status === 429
+        && antigravityPoolAccountId
+        && isAntigravityAccountPoolEnabled(config)
+        && antigravityPoolFailovers < ANTIGRAVITY_POOL_MAX_FAILOVERS_PER_REQUEST
+      ) {
+        const nextAccountId = rotateAntigravityAccountOn429(
+          config,
+          antigravityPoolAccountId,
+          response.headers.get("retry-after"),
+          antigravitySessionKey,
+          route.modelId,
+        );
+        if (nextAccountId) {
+          try { void response.body?.cancel().catch(() => {}); } catch { /* already closed */ }
+          try {
+            const cred = await getAntigravityPoolAccessTokenAndProject(nextAccountId);
+            antigravityPoolAccountId = nextAccountId;
+            antigravityPoolFailovers += 1;
+            route.provider = { ...route.provider, apiKey: cred.accessToken, project: cred.projectId };
+            invalidateSameTargetRequest();
+            promoteAntigravityActiveAccount(nextAccountId);
+            logCtx.provider = formatAntigravityProviderForLog("google-antigravity", nextAccountId, config);
+            activeAdapter = resolveAdapter(
+              resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire),
+              config.cacheRetention,
+            );
+            sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, activeAdapter.name, logCtx.accountLogLabel);
+            nextContinuationRecoveryKind = "antigravity-oauth-429";
             continue;
           } catch {
             // fall through to emit continuation error below

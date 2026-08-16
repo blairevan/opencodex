@@ -568,6 +568,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       let lastFinishReason: string | undefined;
       let sawAnyFrame = false;
       let sawTerminalSignal = false;
+      let streamLastThoughtSignature: string | undefined;
 
       const handleDataLine = async function* (line: string): AsyncGenerator<AdapterEvent, "continue" | "content" | "terminate"> {
         const payload = line.slice(5).trim();
@@ -658,6 +659,16 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
         }
 
         const parts = candidate.content?.parts as GoogleResponsePart[] | undefined;
+        if (parts) {
+          for (const part of parts) {
+            const sig = (part as Record<string, unknown>).thoughtSignature
+              ?? (part as Record<string, unknown>).thought_signature
+              ?? ((part as Record<string, unknown>).extra_content as { google?: { thought_signature?: string } })?.google?.thought_signature;
+            if (part.thought === true && typeof sig === "string" && isLikelyRealThoughtSignature(sig)) {
+              streamLastThoughtSignature = sig;
+            }
+          }
+        }
         // Record Gemini thought signatures for the next stateless tool-result turn. Vertex and
         // Antigravity use separate model namespaces so opaque provider state cannot cross routes.
         const replayModel = provider.googleMode === "cloud-code-assist" ? antigravityModel : vertexReplayModel;

@@ -1,5 +1,5 @@
 /**
- * Opt-in Anthropic OAuth account pool controls (#294).
+ * Opt-in Anthropic / Google Antigravity OAuth account pool controls (#294).
  * Experimental — shows a strong warning because the feature is not battle-tested.
  */
 import { useCallback, useEffect, useState } from "react";
@@ -22,13 +22,18 @@ type PoolState = {
 };
 
 export default function AnthropicAccountPoolSettings({
+  provider = "anthropic",
   apiBase,
   accountCount,
 }: {
+  provider?: "anthropic" | "google-antigravity";
   apiBase: string;
   accountCount: number;
 }) {
   const t = useT();
+  const isAntigravity = provider === "google-antigravity";
+  const p = isAntigravity ? "antigravityPool" : "anthropicPool";
+
   const [state, setState] = useState<PoolState | null>(null);
   const [draft, setDraft] = useState("80");
   const [stickyDraft, setStickyDraft] = useState(String(DEFAULT_ACCOUNT_POOL_STICKY_LIMIT));
@@ -39,16 +44,8 @@ export default function AnthropicAccountPoolSettings({
   useEffect(() => {
     let cancelled = false;
     const ac = new AbortController();
-    // Promise chain rather than async/await: every setter then lives in a `.then`
-    // callback guarded by the same `cancelled` flag, which is the shape static analysis
-    // (react-doctor no-set-state-after-await-in-effect) can actually verify. The
-    // behaviour is unchanged — the guard and the abort controller were already here.
-    //
-    // Deferred by a microtask, not a timer: a timer had to be cancelled in cleanup, so a
-    // mount-then-unmount dropped the request entirely. The abort controller already covers
-    // in-flight cancellation, which is the part that actually needs to be cancellable.
     void Promise.resolve()
-      .then(() => fetch(`${apiBase}/api/oauth/accounts/pool?provider=anthropic`, { signal: ac.signal }))
+      .then(() => fetch(`${apiBase}/api/oauth/accounts/pool?provider=${provider}`, { signal: ac.signal }))
       .then(res => {
         if (!res.ok) throw new Error("load");
         return res.json() as Promise<{
@@ -80,7 +77,7 @@ export default function AnthropicAccountPoolSettings({
       cancelled = true;
       ac.abort();
     };
-  }, [apiBase]);
+  }, [apiBase, provider]);
 
   const save = useCallback(async (next: {
     enabled: boolean;
@@ -102,7 +99,7 @@ export default function AnthropicAccountPoolSettings({
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          provider: "anthropic",
+          provider,
           enabled: next.enabled,
           autoSwitchThreshold: next.threshold,
           strategy: next.strategy,
@@ -125,7 +122,7 @@ export default function AnthropicAccountPoolSettings({
       setDraft(String(next.threshold));
       setStickyDraft(String(savedSticky));
     } catch {
-      setError(t("anthropicPool.saveFailed"));
+      setError(t(`${p}.saveFailed`));
       if (previousState) {
         setState(previousState);
         setDraft(String(previousState.threshold));
@@ -134,29 +131,28 @@ export default function AnthropicAccountPoolSettings({
     } finally {
       setSaving(false);
     }
-  }, [apiBase, state, t]);
+  }, [apiBase, p, provider, state, t]);
 
   const enabled = state?.enabled === true;
   const threshold = state?.threshold ?? 80;
   const strategy = state?.strategy ?? DEFAULT_ACCOUNT_POOL_STRATEGY;
   const stickyLimit = state?.stickyLimit ?? DEFAULT_ACCOUNT_POOL_STICKY_LIMIT;
   const loading = state === null && !loadError;
-  // Always allow turning the pool off; only block enabling when fewer than 2 accounts.
   const toggleDisabled = loading || saving || loadError || (!enabled && accountCount < 2);
 
   return (
     <div className="card" style={{ marginTop: 12 }} aria-busy={loading || saving}>
       <div className="card-row" style={{ alignItems: "flex-start", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <strong>{t("anthropicPool.title")}</strong>
+          <strong>{t(`${p}.title`)}</strong>
           <div className="card-sub" style={{ marginTop: 4 }}>
             {loadError
-              ? t("anthropicPool.loadFailed")
+              ? t(`${p}.loadFailed`)
               : loading
                 ? t("common.loading")
                 : enabled
-                  ? t("anthropicPool.enabledDesc", { threshold })
-                  : t("anthropicPool.disabledDesc")}
+                  ? t(`${p}.enabledDesc`, { threshold })
+                  : t(`${p}.disabledDesc`)}
           </div>
         </div>
         <button
@@ -164,8 +160,8 @@ export default function AnthropicAccountPoolSettings({
           className={`toggle ${enabled ? "on" : ""}`}
           disabled={toggleDisabled}
           aria-pressed={enabled}
-          aria-label={t("anthropicPool.title")}
-          title={enabled ? t("anthropicPool.on") : t("anthropicPool.off")}
+          aria-label={t(`${p}.title`)}
+          title={enabled ? t(`${p}.on`) : t(`${p}.off`)}
           onClick={() => {
             void save({
               enabled: !enabled,
@@ -190,17 +186,17 @@ export default function AnthropicAccountPoolSettings({
           background: "color-mix(in srgb, var(--warn, #c9a227) 12%, transparent)",
         }}
       >
-        {t("anthropicPool.experimentalWarning")}
+        {t(`${p}.experimentalWarning`)}
       </div>
 
       {accountCount < 2 && (
-        <div className="card-sub" style={{ marginTop: 8 }}>{t("anthropicPool.needTwoAccounts")}</div>
+        <div className="card-sub" style={{ marginTop: 8 }}>{t(`${p}.needTwoAccounts`)}</div>
       )}
 
       {enabled && state && (
         <>
           <label className="field" style={{ display: "block", marginTop: 12 }}>
-            <span className="field-label">{t("anthropicPool.threshold")}</span>
+            <span className="field-label">{t(`${p}.threshold`)}</span>
             <input
               className="input mono"
               type="number"
@@ -209,13 +205,13 @@ export default function AnthropicAccountPoolSettings({
               step={1}
               value={draft}
               disabled={saving}
-              aria-label={t("anthropicPool.thresholdAria")}
+              aria-label={t(`${p}.thresholdAria`)}
               onChange={(event) => setDraft(event.target.value)}
               onBlur={() => {
                 const parsed = Number(draft);
                 if (!Number.isInteger(parsed) || parsed < 0 || parsed > 100) {
                   setDraft(String(threshold));
-                  setError(t("anthropicPool.thresholdInvalid"));
+                  setError(t(`${p}.thresholdInvalid`));
                   return;
                 }
                 if (parsed !== threshold) {
@@ -228,15 +224,15 @@ export default function AnthropicAccountPoolSettings({
                 }
               }}
             />
-            <div className="card-sub" style={{ marginTop: 4 }}>{t("anthropicPool.thresholdHelp")}</div>
+            <div className="card-sub" style={{ marginTop: 4 }}>{t(`${p}.thresholdHelp`)}</div>
           </label>
 
           <AccountPoolStrategyControls
             strategy={strategy}
             stickyDraft={stickyDraft}
             disabled={saving}
-            strategySelectId="anthropic-pool-strategy"
-            stickyInputId="anthropic-pool-sticky-limit"
+            strategySelectId={`${provider}-pool-strategy`}
+            stickyInputId={`${provider}-pool-sticky-limit`}
             onStrategyChange={(next) => {
               if (next === strategy) return;
               void save({
