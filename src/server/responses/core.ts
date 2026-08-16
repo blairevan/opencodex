@@ -109,7 +109,6 @@ import {
 import { codexAuthContextLogLabel } from "../../codex/account-label";
 import {
   applyUpstreamRecoveryInit,
-  fetchWithResetRetry,
   fetchWithTransientRetry,
   prepareSameTarget429Wait,
 } from "../../lib/upstream-retry";
@@ -3442,7 +3441,7 @@ async function handleResponsesInner(
         stream: parsed.stream,
       });
     } else {
-      upstreamResponse = await fetchWithResetRetry(
+      upstreamResponse = await fetchWithTransientRetry(
         recovery => {
           noteAttemptSend(logCtx.activeAttempt, inputTokenEstimate, recovery);
           return fetchWithHeaderTimeout(builtInitialRequest.url, applyUpstreamRecoveryInit({
@@ -3858,7 +3857,7 @@ async function handleResponsesInner(
             stream: nextParsed.stream,
           });
         }
-        return await fetchWithResetRetry(
+        return await fetchWithTransientRetry(
           recovery => {
             noteAttemptSend(logCtx.activeAttempt, continuationEstimate, recovery ?? replayKind);
             return fetchWithHeaderTimeout(

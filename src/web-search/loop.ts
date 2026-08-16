@@ -9,7 +9,7 @@ import { runAnthropicWebSearch } from "./anthropic-executor";
 import { clearableDeadline } from "../lib/abort";
 import { redactSecretString } from "../lib/redact";
 import { readBoundedResponseBody } from "../lib/bounded-body";
-import { fetchWithResetRetry, prepareSameTarget429Wait } from "../lib/upstream-retry";
+import { fetchWithTransientRetry, prepareSameTarget429Wait } from "../lib/upstream-retry";
 import { rateLimitRetryDelayMs } from "../providers/key-failover";
 import {
   isTranslatorBudgetExceededError,
@@ -430,7 +430,7 @@ export async function runWithWebSearch(deps: WebSearchLoopDeps): Promise<Respons
               stream: true,
             });
           } else {
-            response = await fetchWithResetRetry(
+            response = await fetchWithTransientRetry(
               (retryRecovery) => {
                 // Record every helper-driven send (the callback runs for the first attempt and
                 // each connection-reset replay); preserve the caller's recovery kind
