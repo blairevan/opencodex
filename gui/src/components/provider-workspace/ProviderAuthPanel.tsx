@@ -5,7 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/shared";
-import { IconLock, IconTrash } from "../../icons";
+import { IconLock, IconRefresh, IconTrash } from "../../icons";
 import type { WorkspaceItem } from "../../provider-workspace/catalog";
 import { oauthAccountDisplayLabel, providerAuthSurface } from "../../provider-workspace/auth";
 import { displayAccountId } from "../../lib/privacy";
@@ -122,9 +122,51 @@ export default function ProviderAuthPanel({
   const [importBusy, setImportBusy] = useState(false);
   const [importStatus, setImportStatus] = useState<"idle" | "invalid" | "failed" | "complete">("idle");
   const [importResult, setImportResult] = useState<CockpitImportResult | null>(null);
+  const [refreshingQuota, setRefreshingQuota] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("ocx_antigravity_auto_refresh") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [refreshInterval, setRefreshInterval] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem("ocx_antigravity_refresh_interval"));
+      return [10, 30, 60, 180].includes(saved) ? saved : 60;
+    } catch {
+      return 60;
+    }
+  });
+  const [countdown, setCountdown] = useState<number>(refreshInterval);
   const [reserveQuotaSlots, setReserveQuotaSlots] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const deviceCodeCopy = useCopyFeedback<string>();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ocx_antigravity_auto_refresh", String(autoRefresh));
+      localStorage.setItem("ocx_antigravity_refresh_interval", String(refreshInterval));
+    } catch {}
+  }, [autoRefresh, refreshInterval]);
+
+  useEffect(() => {
+    setCountdown(refreshInterval);
+  }, [refreshInterval, autoRefresh]);
+
+  useEffect(() => {
+    if (!autoRefresh || accounts.length === 0) return;
+    const timer = window.setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          void handleRefreshQuota();
+          return refreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, refreshInterval, accounts.length, item.name]);
 
   // Soft &quota=1 enrichment lands after the local account list. Reserve stacked
   // bar height briefly so bars don't shove rows when WHAM returns.
@@ -182,6 +224,20 @@ export default function ProviderAuthPanel({
   const loggedIn = accounts.length > 0 || oauth?.loggedIn === true;
   const activeReauthAccount = accounts.find(a => a.active && a.needsReauth);
   const activeNeedsReauth = Boolean(activeReauthAccount);
+
+  const handleRefreshQuota = async () => {
+    if (refreshingQuota || !authHandlers) return;
+    setRefreshingQuota(true);
+    try {
+      if (authHandlers.onRefreshAccounts) {
+        await authHandlers.onRefreshAccounts(item.name);
+      } else if (authHandlers.onRetryAccounts) {
+        await authHandlers.onRetryAccounts(item.name);
+      }
+    } finally {
+      setRefreshingQuota(false);
+    }
+  };
 
   const submitKey = async () => {
     const key = newKey.trim();
@@ -246,7 +302,60 @@ export default function ProviderAuthPanel({
 
   return (
     <section className="pwi-section pwi-auth-section" aria-label={isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}>
-      <h3 className="pwi-section-title">{isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}</h3>
+      <div className="pwi-auth-header-row">
+        <h3 className="pwi-section-title" style={{ margin: 0 }}>{isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}</h3>
+        {isOauth && accounts.length > 0 && (
+          <div className="pwi-auth-header-actions">
+            <div className="pwi-auto-refresh-control">
+              <button
+                type="button"
+                className={`toggle toggle-sm ${autoRefresh ? "on" : ""}`}
+                aria-pressed={autoRefresh}
+                aria-label={t("pws.autoRefresh")}
+                title={autoRefresh ? t("anthropicPool.on") : t("anthropicPool.off")}
+                onClick={() => setAutoRefresh(!autoRefresh)}
+              >
+                <span className="toggle-knob" />
+              </button>
+              <span className="pwi-auto-refresh-title" onClick={() => setAutoRefresh(!autoRefresh)}>
+                {t("pws.autoRefresh")}
+              </span>
+              {autoRefresh && (
+                <>
+                  <select
+                    className="pwi-auto-refresh-select"
+                    value={refreshInterval}
+                    onChange={e => setRefreshInterval(Number(e.target.value))}
+                    aria-label={t("pws.autoRefresh")}
+                  >
+                    <option value={10}>{t("pws.interval10s")}</option>
+                    <option value={30}>{t("pws.interval30s")}</option>
+                    <option value={60}>{t("pws.interval1m")}</option>
+                    <option value={180}>{t("pws.interval3m")}</option>
+                  </select>
+                  <span className="pwi-countdown-badge mono" title={`${countdown}s`}>
+                    {`${countdown}s`}
+                  </span>
+                </>
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm pwi-auth-refresh-btn"
+              disabled={refreshingQuota || accountLoadState === "loading" || busy}
+              onClick={() => {
+                setCountdown(refreshInterval);
+                void handleRefreshQuota();
+              }}
+              title={t("pws.refreshQuota")}
+              aria-label={t("pws.refreshQuota")}
+            >
+              <IconRefresh style={{ width: 13, height: 13 }} className={refreshingQuota ? "pwi-spin-inline" : undefined} aria-hidden="true" />
+              <span>{refreshingQuota ? t("pws.refreshingQuota") : t("pws.refreshQuota")}</span>
+            </button>
+          </div>
+        )}
+      </div>
       <div className="pwi-auth-body">
         {isOauth && (
           <>

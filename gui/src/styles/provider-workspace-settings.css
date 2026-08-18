@@ -3,6 +3,85 @@
 /* ── ProviderAuthPanel ─────────────────────────────────────── */
 
 .pwi-auth-section { display: flex; flex-direction: column; gap: 12px; }
+.pwi-auth-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pwi-auth-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pwi-auto-refresh-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  color: var(--muted);
+  background: transparent;
+  padding: 0;
+  border: none;
+  height: 24px;
+}
+.toggle-sm {
+  width: 28px;
+  height: 16px;
+}
+.toggle-sm .toggle-knob {
+  width: 12px;
+  height: 12px;
+  left: 1px;
+}
+.toggle-sm.on .toggle-knob {
+  left: 13px;
+}
+.pwi-auto-refresh-title {
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--text-label);
+  color: var(--text);
+  margin-left: 1px;
+}
+.pwi-auto-refresh-select {
+  appearance: none;
+  background: var(--hover);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: var(--radius-2xs);
+  cursor: pointer;
+  outline: none;
+}
+.pwi-auto-refresh-select:hover {
+  border-color: var(--muted);
+}
+.pwi-countdown-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0 5px;
+  border-radius: 10px;
+  min-width: 24px;
+  text-align: center;
+}
+.pwi-auth-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  height: 24px;
+  padding: 0 8px;
+  color: var(--muted);
+}
+.pwi-auth-refresh-btn:hover {
+  color: var(--text);
+}
 .pwi-auth-body { display: flex; flex-direction: column; gap: 10px; }
 
 .pwi-auth-status-row { display: flex; align-items: center; gap: 8px; }

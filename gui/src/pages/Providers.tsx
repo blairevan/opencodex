@@ -370,6 +370,7 @@ export default function Providers({ apiBase }: { apiBase: string }) {
               onSwitchAccount: switchAccount,
               onRemoveAccount: removeAccount,
               onRetryAccounts: async provider => { await fetchAccountSets([provider]); },
+              onRefreshAccounts: async provider => { await fetchAccountSets([provider], true); await fetchProviderQuotas(true); },
               onAddApiKey: addApiKeyValue,
               onSwitchApiKey: switchApiKey,
               onRemoveApiKey: removeApiKey,

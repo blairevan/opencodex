@@ -666,6 +666,8 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
               ?? ((part as Record<string, unknown>).extra_content as { google?: { thought_signature?: string } })?.google?.thought_signature;
             if (part.thought === true && typeof sig === "string" && isLikelyRealThoughtSignature(sig)) {
               streamLastThoughtSignature = sig;
+            } else if (part.functionCall && !sig && streamLastThoughtSignature) {
+              part.thoughtSignature = streamLastThoughtSignature;
             }
           }
         }

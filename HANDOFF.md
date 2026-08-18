@@ -139,6 +139,11 @@
 | 2026-08-16 19:45 | Claude | 完成 Google Antigravity 账号池与自动切换全量代码实现及测试验证 (242/242 tests passing) |
 | 2026-08-16 20:00 | Claude | 接入 Google CCA 官方专用端点 retrieveUserQuota，提升配额探测精度与时效 |
 | 2026-08-16 20:15 | Claude | 接入 Google 官方同款 retrieveUserQuotaSummary，实现 Gemini / Claude 周额度与 5h 额度全量展示与调度 |
+| 2026-08-18 10:00 | Claude | 在 Accounts 页面标题右侧新增「刷新配额」按钮与强制刷新链路 |
+| 2026-08-18 10:20 | Claude | 新增自动刷新开关、4 档刷新间隔选择 (10s/30s/1m/3m，默认 60s) 与实时倒计时展示 |
+| 2026-08-18 10:35 | Claude | 自动刷新控件升级为微型滑动开关（Toggle Switch）样式 |
+| 2026-08-18 10:45 | Claude | 去除自动刷新控件外层边框与背景，优化视觉布局 |
+| 2026-08-18 11:00 | Claude | 彻底修复多工具调用流式跨分块 thought_signature 丢失问题（单轮连续工具调用全量通过） |
 
 ---
 
@@ -182,3 +187,41 @@
   - `src/providers/quota.ts`: 新增 `parseAntigravityQuotaSummary`，完整解析 Gemini Models / Claude and GPT models 的 `Weekly Limit Remaining` (周额度) 与 `Five Hour Limit Remaining` (5 小时额度) 双窗口。
   - `src/oauth/antigravity-routing.ts`: 选号与打分逻辑兼容 `Gemini (Weekly)` / `Gemini (5h)` 与 `Claude/GPT (Weekly)` / `Claude/GPT (5h)`。
   - 前端编译与测试全量通过。
+
+### 7.5 Accounts 页面新增一键刷新配额按钮 (2026-08-18)
+- **状态**: ✅ 已实现并在顶部 `AVAILABLE ACCOUNTS` 标题栏右侧上线
+- **改动说明**:
+  - `gui/src/components/provider-workspace/ProviderAuthPanel.tsx`: 在可用账户标题右侧增加带有 `IconRefresh` 旋转加载动画的「刷新配额」按钮。
+  - `gui/src/hooks/useProviderAccountPools.ts` & `gui/src/pages/Providers.tsx`: 点击时调用带 `forceRefresh=true`（即 `&quota=1&refresh=1`）的后端接口，实时向 Google CCA 官方接口抓取最新数据并就地更新。
+  - `gui/src/i18n/*.ts`: 补齐全语言字典。
+
+### 7.6 自动刷新与多档间隔倒计时上线 (2026-08-18)
+- **状态**: ✅ 已实现并在可用账户标题栏右侧上线
+- **改动说明**:
+  - `gui/src/components/provider-workspace/ProviderAuthPanel.tsx`: 增加 `[自动刷新]` 复选框开关、刷新间隔下拉框（10秒、30秒、1分钟、3分钟，默认60秒）以及动态倒计时 Badge（如 `45s`）。
+  - `localStorage` 持久化记住用户的自动刷新偏好与选择的间隔。
+  - 定时器每秒递减并在归零时自动触发 `&quota=1&refresh=1`，重置倒计时。
+  - `gui/src/styles/provider-workspace-settings.css`: 增加紧凑的控制栏与倒计时 Badge 样式。
+  - `gui/src/i18n/*.ts`: 补齐全语言字典条目。
+
+### 7.7 自动刷新控件升级为微型滑动开关样式 (2026-08-18)
+- **状态**: ✅ 已实现并编译上线
+- **改动说明**:
+  - `gui/src/components/provider-workspace/ProviderAuthPanel.tsx`: 将自动刷新的勾选框升级为 `toggle toggle-sm` 精致滑动开关组件，与系统的账户池开关保持一致视觉风格。
+  - `gui/src/styles/provider-workspace-settings.css`: 新增 `.toggle-sm` 微型开关动画样式。
+
+### 7.8 自动刷新控件视觉优化 (2026-08-18)
+- **状态**: ✅ 已优化并构建上线
+- **改动说明**:
+  - `gui/src/styles/provider-workspace-settings.css`: 去除自动刷新控制区外层的灰色圆角边框与底色背景（改为无边框纯净流式布局），视觉更加轻盈清爽。
+
+### 7.9 修复流式连续多工具调用签名丢失（Position N 报错）(2026-08-18)
+- **状态**: ✅ 已定位根本原因并完成修复上线
+- **问题根因**:
+  - 在 Gemini 思考模型进行流式输出时，SSE 分块 1 输出思考过程并附带 `thoughtSignature`，随后模型在后续分块（Chunk 2..N）连续触发多个 `functionCall`。
+  - 在 `src/adapters/google.ts` 中，原流式处理在调用 `observeAntigravityReplay` 之后才将流状态中的签名赋予当前分块，导致 `observeAntigravityReplay` 接收到的后续分块 `functionCall` 丢失签名，未能成功存入 `ReplayCache`。
+  - 在 `src/responses/parser.ts` 中，Freeform 工具（`custom_tool_call`）遗漏了 `providerMetadata` 提取。
+- **修复措施**:
+  - `src/adapters/google.ts`: 在流式分块迭代中，于调用 `observeAntigravityReplay` 之前，优先将当前思考轮次的 `streamLastThoughtSignature` 绑定到每个 `functionCall` 上。
+  - `src/responses/parser.ts`: 为 `custom_tool_call` 补充 `providerMetadata` 解析。
+  - `tests/antigravity-multi-toolcall-replay.test.ts`: 新增连续 5 个工具调用流式跨分块签名重放测试用例。

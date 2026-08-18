@@ -26,7 +26,6 @@ interface ReplayCall {
 interface ReplayEntry {
   /** thoughtSignature keyed by functionCall identity (name + canonical args). */
   byCall: Map<string, ReplayCall>;
-  pendingThoughtSig?: string;
   bytes: number;
   expiresAtMs: number;
   oldestAtMs: number | null;
@@ -626,15 +625,11 @@ export function observeAntigravityReplay(model: string, sessionId: string, parts
     const sig = extractSignature(part);
     const fc = part.functionCall as { name?: unknown; args?: unknown } | undefined;
     if (!fc) {
-      if (sig && part.thought === true) {
-        pendingThoughtSig = sig;
-        entry.pendingThoughtSig = sig;
-      }
+      if (sig && part.thought === true) pendingThoughtSig = sig;
       continue;
     }
-    const callSig = sig ?? pendingThoughtSig ?? entry.pendingThoughtSig;
+    const callSig = sig ?? pendingThoughtSig;
     pendingThoughtSig = undefined;
-    entry.pendingThoughtSig = undefined;
     if (!callSig) continue;
     const ck = functionCallKey(fc.name, fc.args);
     if (!ck) continue; // only function-call signatures are replayable by identity

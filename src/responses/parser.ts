@@ -536,6 +536,8 @@ export function parseRequest(body: unknown): OcxParsedRequest {
           arguments: { input: call.input ?? "" },
           customWireName: call.name,
         };
+        const providerMetadata = providerMetadataFromResponsesFunctionCall(call);
+        if (providerMetadata) toolCall.providerMetadata = providerMetadata;
         assistantHolderWithReasoning().content.push(toolCall);
         continue;
       }

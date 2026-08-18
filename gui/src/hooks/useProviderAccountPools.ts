@@ -73,7 +73,7 @@ export function useProviderAccountPools(deps: {
   const keyPoolsKeyRef = useRef<string | null>(null);
   const switchingAccountRef = useRef<{ provider: string; accountId: string } | null>(null);
 
-  const fetchAccountSets = useCallback(async (providers: string[]) => {
+  const fetchAccountSets = useCallback(async (providers: string[], forceRefresh = false) => {
     const uniqueProviders = [...new Set(providers)];
     setAccountLoadStates(current => {
       const next = { ...current };
@@ -97,7 +97,7 @@ export function useProviderAccountPools(deps: {
         // per credential). Failures leave the already-ready account rows untouched.
         void (async () => {
           try {
-            const quotaRes = await fetch(`${apiBase}/api/oauth/accounts?provider=${encodeURIComponent(provider)}&quota=1`);
+            const quotaRes = await fetch(`${apiBase}/api/oauth/accounts?provider=${encodeURIComponent(provider)}&quota=1${forceRefresh ? "&refresh=1" : ""}`);
             if (!quotaRes.ok) return;
             const quotaData = await quotaRes.json() as { activeAccountId?: string | null; accounts?: OAuthAccount[] };
             if (!aliveRef.current || accountRequestGenerationRef.current[provider] !== generation) return;
