@@ -1731,6 +1731,18 @@ export function startServer(port?: number, deps: StartServerDeps = {}): Server<W
       .catch(() => {});
   }
 
+  // Prime Google Antigravity account-pool quota at startup so the 80 % threshold
+  // router has real per-account usage scores from the very first request.
+  // Fire-and-forget: never blocks listen; network failures silently no-op.
+  import("../oauth/antigravity-routing")
+    .then(({ isAntigravityAccountPoolEnabled }) => {
+      if (!isAntigravityAccountPoolEnabled(config)) return;
+      return import("../providers/quota").then(({ fetchProviderAccountQuotas }) =>
+        fetchProviderAccountQuotas("google-antigravity"),
+      );
+    })
+    .catch(() => {});
+
   // Opt-in storage policy (default OFF). Never blocks listen; cancellable on shutdown.
   backgroundLifecycle.scheduleStartupRun();
 

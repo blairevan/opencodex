@@ -242,6 +242,12 @@ function messagesToGeminiFormat(
     }
   }
 
+  if (contents.length === 0) {
+    contents.push({ role: "user", parts: [{ text: GEMINI_EMPTY_PLACEHOLDER }] });
+  } else if ((contents[contents.length - 1] as { role?: string }).role === "model") {
+    contents.push({ role: "user", parts: [{ text: "(continue)" }] });
+  }
+
   return { systemInstruction, contents };
 }
 
@@ -482,6 +488,25 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             applyAntigravityReplay(wireModelId, sessionId, contents);
           } else {
             sanitizeAntigravityClaudeSignatures(contents);
+          }
+        }
+        // Safety net: if any functionCall in a model turn still lacks a thoughtSignature after
+        // the replay cache fill, strip ALL signatures from that turn rather than sending a
+        // partial set — the upstream rejects turns where some calls have signatures and others
+        // don't (HTTP 400 "missing thought_signature"). This happens when the per-session cache
+        // is full (256 cap) and the oldest entries have been evicted.
+        if (Array.isArray((request as { contents?: unknown[] }).contents)) {
+          for (const c of (request as { contents: unknown[] }).contents as { role?: string; parts?: Record<string, unknown>[] }[]) {
+            if (!c || c.role !== "model" || !Array.isArray(c.parts)) continue;
+            const hasAnySignature = c.parts.some(p => p.functionCall && (p.thoughtSignature !== undefined || p.thought_signature !== undefined));
+            const missingAny = c.parts.some(p => p.functionCall && p.thoughtSignature === undefined && p.thought_signature === undefined);
+            if (hasAnySignature && missingAny) {
+              // Partial signature set — strip all to avoid the 400.
+              for (const p of c.parts) {
+                delete p.thoughtSignature;
+                delete p.thought_signature;
+              }
+            }
           }
         }
         const envelope = {
@@ -878,6 +903,16 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       };
       if (raw.error) {
         const err = raw.error as { message?: string };
+        // Clear-on-invalid (non-stream path): mirror the stream inline-error handler.
+        // A thought_signature rejection means our replayed signatures are stale — clear the
+        // cache so the next turn starts without them instead of re-injecting bad data.
+        const replayModel = provider.googleMode === "cloud-code-assist" ? antigravityModel : vertexReplayModel;
+        const replaySession = provider.googleMode === "cloud-code-assist" ? antigravitySession : vertexReplaySession;
+        if ((provider.googleMode === "cloud-code-assist" || provider.googleMode === "vertex")
+          && replayModel && replaySession
+          && /signature|invalid_argument|invalid argument/i.test(err?.message ?? "")) {
+          clearAntigravityReplay(replayModel, replaySession);
+        }
         return finish([{ type: "error", message: err.message ?? "upstream error" }]);
       }
       // Antigravity (CCA) nests the standard Gemini payload under `response`; unwrap it.

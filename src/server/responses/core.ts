@@ -2037,6 +2037,12 @@ async function handleResponsesInner(
         route.provider = { ...route.provider, apiKey: accessToken };
         logCtx.provider = formatAnthropicProviderForLog("anthropic", selection.accountId, config);
       } else if (route.providerName === "google-antigravity" && isAntigravityAccountPoolEnabled(config)) {
+        void (async () => {
+          try {
+            const { fetchProviderAccountQuotas } = await import("../../providers/quota");
+            await fetchProviderAccountQuotas("google-antigravity");
+          } catch {}
+        })();
         const selection = resolveAntigravityAccountForSession(antigravitySessionKey, route.modelId, config);
         if (!selection.accountId) {
           if (selection.reason === "all-cooled") {

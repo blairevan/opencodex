@@ -25,8 +25,10 @@ import { sweepExpiredOnWrite } from "../lib/state-store-sweeper";
 import { retainedUtf8Bytes } from "../lib/admission";
 
 const PROVIDER = "google-antigravity";
-const DEFAULT_COOLDOWN_MS = 60_000;
-const MAX_COOLDOWN_MS = 15 * 60_000;
+/** Default cooldown when no Retry-After header: match the Antigravity 5 h rolling window. */
+const DEFAULT_COOLDOWN_MS = 5 * 60 * 60_000;
+/** Hard cap on Retry-After cooldowns (accounts recover within a day). */
+const MAX_COOLDOWN_MS = 24 * 60 * 60_000;
 const AFFINITY_IDLE_TTL_MS = 24 * 60 * 60_000;
 const MAX_AFFINITY_ENTRIES = 2_000;
 const MAX_AFFINITY_COMPONENT_BYTES = 512;
