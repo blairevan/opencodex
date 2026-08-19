@@ -225,3 +225,11 @@
   - `src/adapters/google.ts`: 在流式分块迭代中，于调用 `observeAntigravityReplay` 之前，优先将当前思考轮次的 `streamLastThoughtSignature` 绑定到每个 `functionCall` 上。
   - `src/responses/parser.ts`: 为 `custom_tool_call` 补充 `providerMetadata` 解析。
   - `tests/antigravity-multi-toolcall-replay.test.ts`: 新增连续 5 个工具调用流式跨分块签名重放测试用例。
+
+### 7.10 修复 5h 额度耗尽后切号失效与长会话 Replay 缺失 400 (2026-08-19)
+- **状态**: ✅ 已定位根因、修复并提交部署 (`72266436`)
+- **改动说明**:
+  1. **Cooldown 周期对齐**: `src/oauth/antigravity-routing.ts` 将 `DEFAULT_COOLDOWN_MS` 从 60s 调整为 5 小时（对齐 Antigravity 实际 5h 滚动配额刷新周期），`MAX_COOLDOWN_MS` 放宽至 24 小时，避免 60 秒冷却过期后立即切回额度已空的账号。
+  2. **启动配额预热**: `src/server/index.ts` 在服务启动时异步并发探测所有 Antigravity 账号的初始配额，确保多账号池在收到首个请求时已有真实配额打分，避免冷启动时内存缓存为空导致 80% 阈值路由失效。
+  3. **长历史签名防护**: `src/adapters/google.ts` 在 `buildRequest` 阶段对 `applyAntigravityReplay` 进行容错拦截。若某一轮存在部分函数调用由于超出 256 LRU 淘汰导致签名缺失，则剥离该轮全部签名，避免产生部分有签名、部分缺签名触发的上游 `400: Function call is missing a thought_signature` 报错。
+  4. **非流式 400 Clear-on-Invalid 对称处理**: `src/adapters/google.ts` 的 `parseResponse` 增加对 400 签名错误的重放缓存清理机制，与流式路径保持对称。
