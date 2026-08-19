@@ -229,7 +229,7 @@
 ### 7.10 修复 5h 额度耗尽后切号失效与长会话 Replay 缺失 400 (2026-08-19)
 - **状态**: ✅ 已定位根因、修复并提交部署 (`72266436`)
 - **改动说明**:
-  1. **Cooldown 周期对齐**: `src/oauth/antigravity-routing.ts` 将 `DEFAULT_COOLDOWN_MS` 从 60s 调整为 5 小时（对齐 Antigravity 实际 5h 滚动配额刷新周期），`MAX_COOLDOWN_MS` 放宽至 24 小时，避免 60 秒冷却过期后立即切回额度已空的账号。
+  1. **基于 5h / 周窗口 resetAt 的动态智能冷却**: `src/oauth/antigravity-routing.ts` 改造 429 冷却计算逻辑，优先读取配额缓存中对应模型家族的瓶颈重置时间（`resetAt`）。若 5h 额度耗尽按 5h 重置剩余时间冷却，若周额度耗尽按周重置剩余时间冷却，并在重置时间基础上**多增加 5 分钟缓冲**（`BUFFER_COOLDOWN_MS = 5min`），避免临界抖动。兜底采用 5 小时，上限支持至 7 天。
   2. **启动配额预热**: `src/server/index.ts` 在服务启动时异步并发探测所有 Antigravity 账号的初始配额，确保多账号池在收到首个请求时已有真实配额打分，避免冷启动时内存缓存为空导致 80% 阈值路由失效。
   3. **长历史签名防护**: `src/adapters/google.ts` 在 `buildRequest` 阶段对 `applyAntigravityReplay` 进行容错拦截。若某一轮存在部分函数调用由于超出 256 LRU 淘汰导致签名缺失，则剥离该轮全部签名，避免产生部分有签名、部分缺签名触发的上游 `400: Function call is missing a thought_signature` 报错。
   4. **非流式 400 Clear-on-Invalid 对称处理**: `src/adapters/google.ts` 的 `parseResponse` 增加对 400 签名错误的重放缓存清理机制，与流式路径保持对称。

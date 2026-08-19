@@ -132,6 +132,60 @@ describe("antigravity-routing", () => {
     expect(label).toContain("google-antigravity-");
   });
 
+  test("dynamically derives cooldown from 5h quota reset time with 5 min buffer", () => {
+    const now = 1_000_000;
+    const resetAt = now + 28 * 60_000; // 28 minutes remaining
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [
+        { label: "Gemini (5h)", percent: 100, resetAt },
+        { label: "Gemini (Weekly)", percent: 10, resetAt: now + 6 * 24 * 60 * 60_000 },
+      ],
+      updatedAt: now,
+    });
+
+    rotateAntigravityAccountOn429(
+      configPoolEnabled,
+      "acc-1",
+      undefined,
+      "s-quota-5h",
+      "gemini-3.7-flash",
+      now,
+    );
+
+    const snap = getAntigravityAccountHealthSnapshot("acc-1", now);
+    expect(snap).not.toBeNull();
+    expect(snap?.cooldownSource).toBe("quota-reset");
+    // 28 min + 5 min buffer = 33 min
+    expect(snap?.cooldownUntil).toBe(now + 28 * 60_000 + 5 * 60_000);
+  });
+
+  test("dynamically derives cooldown from weekly quota reset time when weekly limit is exhausted with 5 min buffer", () => {
+    const now = 1_000_000;
+    const weeklyResetAt = now + 3 * 24 * 60 * 60_000; // 3 days remaining
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [
+        { label: "Claude/GPT (5h)", percent: 100, resetAt: now + 30 * 60_000 },
+        { label: "Claude/GPT (Weekly)", percent: 100, resetAt: weeklyResetAt },
+      ],
+      updatedAt: now,
+    });
+
+    rotateAntigravityAccountOn429(
+      configPoolEnabled,
+      "acc-1",
+      undefined,
+      "s-quota-weekly",
+      "claude-3.7-sonnet",
+      now,
+    );
+
+    const snap = getAntigravityAccountHealthSnapshot("acc-1", now);
+    expect(snap).not.toBeNull();
+    expect(snap?.cooldownSource).toBe("quota-reset");
+    // 3 days + 5 min buffer
+    expect(snap?.cooldownUntil).toBe(weeklyResetAt + 5 * 60_000);
+  });
+
   test("extracts session key from parts", () => {
     const key = antigravitySessionKeyFromParts({ clientThreadId: "thread-abc-123" });
     expect(key).toBe("thread-abc-123");

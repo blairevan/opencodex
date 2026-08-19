@@ -25,10 +25,12 @@ import { sweepExpiredOnWrite } from "../lib/state-store-sweeper";
 import { retainedUtf8Bytes } from "../lib/admission";
 
 const PROVIDER = "google-antigravity";
-/** Default cooldown when no Retry-After header: match the Antigravity 5 h rolling window. */
+/** Fallback cooldown when neither Retry-After nor quota resetAt is available: 5 h default window. */
 const DEFAULT_COOLDOWN_MS = 5 * 60 * 60_000;
-/** Hard cap on Retry-After cooldowns (accounts recover within a day). */
-const MAX_COOLDOWN_MS = 24 * 60 * 60_000;
+/** Extra safety buffer added on top of quota resetAt to avoid edge-timing rate-limits (5 min). */
+const BUFFER_COOLDOWN_MS = 5 * 60_000;
+/** Hard cap on cooldowns (allows weekly reset windows up to 7 days). */
+const MAX_COOLDOWN_MS = 7 * 24 * 60 * 60_000;
 const AFFINITY_IDLE_TTL_MS = 24 * 60 * 60_000;
 const MAX_AFFINITY_ENTRIES = 2_000;
 const MAX_AFFINITY_COMPONENT_BYTES = 512;
@@ -39,7 +41,7 @@ export const ANTIGRAVITY_POOL_MAX_FAILOVERS_PER_REQUEST = 3;
 
 interface AccountHealth {
   cooldownUntil: number;
-  cooldownSource: "retry-after" | "default";
+  cooldownSource: "retry-after" | "quota-reset" | "default";
 }
 
 interface AffinityEntry {
@@ -166,6 +168,49 @@ function usageScore(accountId: string, modelId?: string): number {
   }
   if (maxScore === Number.NEGATIVE_INFINITY) return UNKNOWN_USAGE_SCORE;
   return Math.max(0, Math.min(100, maxScore));
+}
+
+function resolveQuotaDerivedCooldownMs(
+  accountId: string,
+  modelId: string | undefined,
+  now: number,
+): number | undefined {
+  const quota = getCachedProviderAccountQuota(PROVIDER, accountId);
+  if (!quota?.customWindows || quota.customWindows.length === 0) {
+    return undefined;
+  }
+
+  const isGem = isGeminiModel(modelId);
+  const matched = quota.customWindows.filter(w => matchesFamilyWindow(w.label, isGem));
+  const windows = matched.length > 0 ? matched : quota.customWindows;
+
+  let maxFullUsageResetAt: number | undefined;
+  let highestPercent = Number.NEGATIVE_INFINITY;
+  let highestPercentResetAt: number | undefined;
+
+  for (const win of windows) {
+    if (typeof win.resetAt === "number" && Number.isFinite(win.resetAt) && win.resetAt > now) {
+      const pct = typeof win.percent === "number" && Number.isFinite(win.percent) ? win.percent : 0;
+      if (pct >= 90) {
+        if (maxFullUsageResetAt === undefined || win.resetAt > maxFullUsageResetAt) {
+          maxFullUsageResetAt = win.resetAt;
+        }
+      }
+      if (pct > highestPercent) {
+        highestPercent = pct;
+        highestPercentResetAt = win.resetAt;
+      }
+    }
+  }
+
+  const targetResetAt = maxFullUsageResetAt ?? highestPercentResetAt;
+  if (targetResetAt && targetResetAt > now) {
+    const remainingMs = targetResetAt - now;
+    const cooldownWithBuffer = remainingMs + BUFFER_COOLDOWN_MS;
+    return Math.min(Math.max(cooldownWithBuffer, 1_000), MAX_COOLDOWN_MS);
+  }
+
+  return undefined;
 }
 
 function isPoolCredentialUsable(accountId: string): boolean {
@@ -468,10 +513,26 @@ export function rotateAntigravityAccountOn429(
   if (!isAntigravityAccountPoolEnabled(config)) return null;
 
   const parsedRetry = parseRetryAfterMs(retryAfterHeader, now);
-  const cooldownMs = parsedRetry ?? DEFAULT_COOLDOWN_MS;
+  let cooldownMs: number;
+  let cooldownSource: AccountHealth["cooldownSource"];
+
+  if (parsedRetry !== undefined) {
+    cooldownMs = parsedRetry;
+    cooldownSource = "retry-after";
+  } else {
+    const quotaDerivedMs = resolveQuotaDerivedCooldownMs(failedAccountId, modelId, now);
+    if (quotaDerivedMs !== undefined) {
+      cooldownMs = quotaDerivedMs;
+      cooldownSource = "quota-reset";
+    } else {
+      cooldownMs = DEFAULT_COOLDOWN_MS;
+      cooldownSource = "default";
+    }
+  }
+
   upstreamHealth.set(failedAccountId, {
     cooldownUntil: now + cooldownMs,
-    cooldownSource: parsedRetry ? "retry-after" : "default",
+    cooldownSource,
   });
   sweepExpiredOnWrite(now);
   clearAntigravitySessionAffinityForAccount(failedAccountId);
