@@ -587,6 +587,35 @@ describe("antigravity parseResponse unwraps response (non-streaming)", () => {
     expect((contents[0].parts[0] as { thoughtSignature?: string }).thoughtSignature).toBe("sig-nonstream0000000");
   });
 
+  test("non-streaming propagates a thought signature only to the first parallel function call", async () => {
+    const adapter = createGoogleAdapter(provider);
+    await adapter.buildRequest(parsed("non-stream multiple tools"));
+    const signature = "sig-nonstream-sequential-0001";
+    const body = JSON.stringify({
+      response: {
+        candidates: [{
+          content: {
+            parts: [
+              { thought: true, text: "planning", thoughtSignature: signature },
+              ...[1, 2, 3, 4, 5].map(i => ({
+                functionCall: { name: "default_api__exec", args: { cmd: "cmd_" + i } },
+              })),
+            ],
+          },
+        }],
+      },
+    });
+
+    const events = await adapter.parseResponse!(new Response(body, { status: 200 }));
+    const starts = events.filter(event => event.type === "tool_call_start");
+
+    expect(starts).toHaveLength(5);
+    expect((starts[0] as { providerMetadata?: { google?: { thoughtSignature?: string } } }).providerMetadata?.google?.thoughtSignature).toBe(signature);
+    for (const start of starts.slice(1)) {
+      expect((start as { providerMetadata?: { google?: { thoughtSignature?: string } } }).providerMetadata?.google?.thoughtSignature).toBeUndefined();
+    }
+  });
+
   // Guard for #1503: routing `thought: true` text to the reasoning channel must not disturb
   // signature observation. Gemini 3 rejects a follow-up turn whose first function-call part
   // lost its signature, so a classification change that also dropped replay would trade a
@@ -640,6 +669,34 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
     const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
     const fcPart = modelTurn?.parts.find(part => "functionCall" in part);
     expect(fcPart?.thoughtSignature).toBe("sig-abcdef0123456789");
+  });
+
+  test("parallel history keeps the first call signature without copying it to later calls", async () => {
+    const p = {
+      modelId: "gemini-3-pro",
+      stream: false,
+      context: {
+        messages: [
+          { role: "user", content: "run both" },
+          {
+            role: "assistant",
+            content: [
+              { type: "toolCall", id: "c1", name: "exec", namespace: "default_api", arguments: { cmd: "one" }, thoughtSignature: "sig-abcdef0123456789" },
+              { type: "toolCall", id: "c2", name: "exec", namespace: "default_api", arguments: { cmd: "two" } },
+            ],
+          },
+        ],
+        systemPrompt: [], tools: [],
+      },
+      options: {},
+    } as unknown as OcxParsedRequest;
+    const req = await createGoogleAdapter(provider).buildRequest(p);
+    const env = JSON.parse(req.body);
+    const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
+    const calls = modelTurn?.parts.filter(part => "functionCall" in part) ?? [];
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.thoughtSignature).toBe("sig-abcdef0123456789");
+    expect(calls[1]?.thoughtSignature).toBeUndefined();
   });
 
   test("a synthetic Responses item id (fc_...) is NOT forwarded as a thoughtSignature", async () => {

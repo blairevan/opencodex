@@ -23,10 +23,10 @@ const provider = {
   project: "test-project",
 } as OcxProviderConfig;
 
-describe("multi-tool-call sequential streaming thought-signature preservation", () => {
+describe("parallel streaming tool-call thought-signature preservation", () => {
   beforeEach(() => __resetAntigravityReplayCache());
 
-  test("preserves thoughtSignature for all N sequential tool calls in a streaming turn across SSE chunks", async () => {
+  test("preserves the signature only on the first parallel tool call across SSE chunks", async () => {
     const adapter = createGoogleAdapter(provider);
     const parsedRequest = {
       modelId: MODEL,
@@ -60,11 +60,12 @@ describe("multi-tool-call sequential streaming thought-signature preservation", 
       events.push(event);
     }
 
-    // Verify each tool_call_start event carried the signature
+    // Parallel calls share one model step: only the first call carries the signature.
     const starts = events.filter(e => e.type === "tool_call_start");
     expect(starts.length).toBe(5);
-    for (const s of starts) {
-      expect((s as unknown as { providerMetadata?: { google?: { thoughtSignature?: string } } }).providerMetadata?.google?.thoughtSignature).toBe(SIG);
+    expect((starts[0] as unknown as { providerMetadata?: { google?: { thoughtSignature?: string } } }).providerMetadata?.google?.thoughtSignature).toBe(SIG);
+    for (const s of starts.slice(1)) {
+      expect((s as unknown as { providerMetadata?: { google?: { thoughtSignature?: string } } }).providerMetadata?.google?.thoughtSignature).toBeUndefined();
     }
 
     // Verify replay cache can re-inject into follow-up request contents
@@ -79,9 +80,9 @@ describe("multi-tool-call sequential streaming thought-signature preservation", 
 
     applyAntigravityReplay("gemini-3.7-flash-tiered", antigravitySessionId(parsedRequest), followupContents);
 
-    for (let i = 0; i < 5; i++) {
-      const part = followupContents[0].parts[i] as { thoughtSignature?: string };
-      expect(part.thoughtSignature).toBe(SIG);
+    expect((followupContents[0].parts[0] as { thoughtSignature?: string }).thoughtSignature).toBe(SIG);
+    for (let i = 1; i < 5; i++) {
+      expect((followupContents[0].parts[i] as { thoughtSignature?: string }).thoughtSignature).toBeUndefined();
     }
   });
 });

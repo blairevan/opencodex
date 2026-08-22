@@ -354,6 +354,33 @@ function googleToolCallMetadataFromPart(
 }
 
 /**
+ * Propagate a valid thought signature from a thought part to the first unsigned function call in
+ * the current model response. Gemini treats multiple calls in one response as parallel calls; the
+ * later calls must not inherit the first call's signature.
+ */
+function propagateThoughtSignatureToFunctionCalls(
+  parts: GoogleResponsePart[],
+  previousSignature?: string,
+  previousFunctionCallSignatureAssigned = false,
+): { lastSignature?: string; functionCallSignatureAssigned: boolean } {
+  let lastSignature = previousSignature;
+  let functionCallSignatureAssigned = previousFunctionCallSignatureAssigned;
+  for (const part of parts) {
+    const directSignature = part.thoughtSignature
+      ?? (part as GoogleResponsePart & { thought_signature?: string }).thought_signature
+      ?? ((part as GoogleResponsePart & { extra_content?: { google?: { thought_signature?: string } } })
+        .extra_content?.google?.thought_signature);
+    if (part.thought === true && isLikelyRealThoughtSignature(directSignature)) {
+      lastSignature = directSignature;
+    } else if (part.functionCall && !functionCallSignatureAssigned) {
+      if (!directSignature && lastSignature) part.thoughtSignature = lastSignature;
+      functionCallSignatureAssigned = true;
+    }
+  }
+  return { lastSignature, functionCallSignatureAssigned };
+}
+
+/**
  * Google marks model-internal reasoning as a normal text-bearing part plus `thought: true`.
  * Keep that provider visibility bit authoritative here so the streaming and buffered parsers
  * cannot accidentally expose the same hidden reasoning through different event types.
@@ -490,25 +517,6 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             sanitizeAntigravityClaudeSignatures(contents);
           }
         }
-        // Safety net: if any functionCall in a model turn still lacks a thoughtSignature after
-        // the replay cache fill, strip ALL signatures from that turn rather than sending a
-        // partial set — the upstream rejects turns where some calls have signatures and others
-        // don't (HTTP 400 "missing thought_signature"). This happens when the per-session cache
-        // is full (256 cap) and the oldest entries have been evicted.
-        if (Array.isArray((request as { contents?: unknown[] }).contents)) {
-          for (const c of (request as { contents: unknown[] }).contents as { role?: string; parts?: Record<string, unknown>[] }[]) {
-            if (!c || c.role !== "model" || !Array.isArray(c.parts)) continue;
-            const hasAnySignature = c.parts.some(p => p.functionCall && (p.thoughtSignature !== undefined || p.thought_signature !== undefined));
-            const missingAny = c.parts.some(p => p.functionCall && p.thoughtSignature === undefined && p.thought_signature === undefined);
-            if (hasAnySignature && missingAny) {
-              // Partial signature set — strip all to avoid the 400.
-              for (const p of c.parts) {
-                delete p.thoughtSignature;
-                delete p.thought_signature;
-              }
-            }
-          }
-        }
         const envelope = {
           model: wireModelId,
           // The envelope's `userAgent` field is a protocol constant ("antigravity"), distinct from
@@ -594,6 +602,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       let sawAnyFrame = false;
       let sawTerminalSignal = false;
       let streamLastThoughtSignature: string | undefined;
+      let streamFunctionCallSignatureAssigned = false;
 
       const handleDataLine = async function* (line: string): AsyncGenerator<AdapterEvent, "continue" | "content" | "terminate"> {
         const payload = line.slice(5).trim();
@@ -685,16 +694,13 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
 
         const parts = candidate.content?.parts as GoogleResponsePart[] | undefined;
         if (parts) {
-          for (const part of parts) {
-            const sig = (part as Record<string, unknown>).thoughtSignature
-              ?? (part as Record<string, unknown>).thought_signature
-              ?? ((part as Record<string, unknown>).extra_content as { google?: { thought_signature?: string } })?.google?.thought_signature;
-            if (part.thought === true && typeof sig === "string" && isLikelyRealThoughtSignature(sig)) {
-              streamLastThoughtSignature = sig;
-            } else if (part.functionCall && !sig && streamLastThoughtSignature) {
-              part.thoughtSignature = streamLastThoughtSignature;
-            }
-          }
+          const propagated = propagateThoughtSignatureToFunctionCalls(
+            parts,
+            streamLastThoughtSignature,
+            streamFunctionCallSignatureAssigned,
+          );
+          streamLastThoughtSignature = propagated.lastSignature;
+          streamFunctionCallSignatureAssigned = propagated.functionCallSignatureAssigned;
         }
         // Record Gemini thought signatures for the next stateless tool-result turn. Vertex and
         // Antigravity use separate model namespaces so opaque provider state cannot cross routes.
@@ -933,15 +939,17 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       let toolCallsStarted = 0;
       const imageBudget = createImageBudget();
       if (candidates?.[0]?.content?.parts) {
+        const parts = candidates[0].content.parts;
+        propagateThoughtSignatureToFunctionCalls(parts);
         // Non-streaming Google-family response: observe thought signatures for the next turn,
         // using the same transport-scoped namespace as the streaming path.
         const replayModel = provider.googleMode === "cloud-code-assist" ? antigravityModel : vertexReplayModel;
         const replaySession = provider.googleMode === "cloud-code-assist" ? antigravitySession : vertexReplaySession;
         if ((provider.googleMode === "cloud-code-assist" || provider.googleMode === "vertex")
           && replayModel && replaySession) {
-          observeAntigravityReplay(replayModel, replaySession, candidates[0].content.parts as unknown[]);
+          observeAntigravityReplay(replayModel, replaySession, parts as unknown[]);
         }
-        for (const part of candidates[0].content.parts) {
+        for (const part of parts) {
           const textEvent = googlePartTextEvent(part);
           if (textEvent) events.push(textEvent);
           const inline = (part as { inlineData?: { mimeType?: string; data?: string } }).inlineData;
