@@ -175,8 +175,8 @@ export default function QuotaBars({
   threshold: number;
   t: TFn;
   className?: string;
-  /** compact = classic one-line rows; stacked = overview cards with clear reset copy */
-  layout?: "compact" | "stacked";
+  /** compact = classic rows; stacked = overview cards; inline = one-line account rows */
+  layout?: "compact" | "stacked" | "inline";
   /**
    * When quota is still null (soft /accounts before WHAM), reserve the compact
    * bar slot so deferred fill does not shove the page down.
@@ -190,7 +190,7 @@ export default function QuotaBars({
   const rows = buildQuotaRows(quota, plan, t);
   if (rows.length === 0) {
     if (!pending) return null;
-    if (layout === "stacked") {
+    if (layout === "stacked" || layout === "inline") {
       return (
         <div className={`quota-stacked quota-stacked--pending${className ? ` ${className}` : ""}`} aria-busy="true" role="status">
           {Array.from({ length: 2 }, (_, index) => (
@@ -229,20 +229,24 @@ export default function QuotaBars({
       </div>
     );
   }
-  if (layout === "stacked") {
+  if (layout === "stacked" || layout === "inline") {
     return (
       <div className={`quota-stacked${className ? ` ${className}` : ""}`}>
         {rows.map(row => (
-          <StackedQuotaRow
-            key={row.limitLabel}
-            row={row}
-            threshold={threshold}
-            t={t}
-            locale={locale}
-            incomplete={row.windowKey
-              ? incompleteWindowKeys?.has(row.windowKey) === true
-              : row.customLabel !== undefined && incompleteCustomWindowLabels?.has(row.customLabel) === true}
-          />
+          layout === "inline" ? (
+            <InlineQuotaRow key={row.limitLabel} row={row} threshold={threshold} t={t} locale={locale} />
+          ) : (
+            <StackedQuotaRow
+              key={row.limitLabel}
+              row={row}
+              threshold={threshold}
+              t={t}
+              locale={locale}
+              incomplete={row.windowKey
+                ? incompleteWindowKeys?.has(row.windowKey) === true
+                : row.customLabel !== undefined && incompleteCustomWindowLabels?.has(row.customLabel) === true}
+            />
+          )
         ))}
       </div>
     );
@@ -296,6 +300,36 @@ function QuotaRow({ label, percent, resetAt, threshold, t, locale }: {
         {Math.round(percent)}%
         {exhausted ? ` · ${t("quota.limitReached")}` : ""}
       </span>
+    </div>
+  );
+}
+
+function InlineQuotaRow({ row, threshold, t, locale }: {
+  row: QuotaBarRow;
+  threshold: number;
+  t: TFn;
+  locale: Locale;
+}) {
+  const exhausted = isQuotaExhausted(row.percent);
+  const warn = isQuotaWarn(row.percent, threshold);
+  const color = quotaBarTone(row.percent, threshold);
+  const resetText = formatResetFuture(row.resetAt, t, locale);
+  return (
+    <div className={`quota-inline-row${warn ? " quota-inline-row--warn" : ""}${exhausted ? " quota-inline-row--exhausted" : ""}`}>
+      <span className="quota-inline-label">{row.limitLabel}</span>
+      <div className="bar quota-inline-bar">
+        <div className={`bar-fill ${color}`} style={barFillStyle(row.percent)} />
+      </div>
+      <span className={`quota-inline-used${warn ? " quota-inline-used--warn" : ""}`}>
+        {t("quota.usedPercent", { pct: Math.round(row.percent) })}
+      </span>
+      <span className="quota-inline-reset muted">{resetText}</span>
+      {exhausted && (
+        <span className="quota-inline-limit-reached" role="status">
+          <IconAlert width={12} height={12} aria-hidden="true" />
+          {t("quota.limitReached")}
+        </span>
+      )}
     </div>
   );
 }
@@ -395,9 +429,9 @@ export function formatResetFuture(
   }
 
   const minutes = Math.round((ms - now) / 60_000);
-  if (minutes < 60) return t("quota.resetsRelativeMinutes", { n: Math.max(1, minutes) });
+  if (minutes < 60) return t("quota.resetsRelativeMinutes", { n: Math.max(1, minutes), time });
   const hours = Math.round(minutes / 60);
-  if (hours < 12 && dayDiff === 0) return t("quota.resetsRelativeHours", { n: Math.max(1, hours) });
+  if (hours < 12 && dayDiff === 0) return t("quota.resetsRelativeHours", { n: Math.max(1, hours), time });
   if (dayDiff === 0) return t("quota.resetsToday", { time });
 
   return t("quota.resetsAt", { date: dateStr, time, when: `${dateStr}, ${time}` });

@@ -45,6 +45,7 @@ export type OAuthAccountRow = {
   alias?: string;
   email?: string;
   active: boolean;
+  enabled?: boolean;
   needsReauth?: boolean;
   health?: { status: OAuthAccountHealthStatus; reason?: string; until?: string };
   healthLabel?: string;
@@ -78,6 +79,7 @@ export interface ProviderAuthHandlers {
   onReauth: (provider: string, accountId?: string) => void | Promise<void>;
   onSwitchAccount: (provider: string, account: OAuthAccountRow) => void | Promise<void>;
   onRemoveAccount: (provider: string, account: OAuthAccountRow) => void | Promise<void>;
+  onSetAccountEnabled: (provider: string, account: OAuthAccountRow, enabled: boolean) => void | Promise<void>;
   onRetryAccounts?: (provider: string) => void | Promise<void>;
   onRefreshAccounts?: (provider: string) => Promise<void>;
   onAddApiKey: (provider: string, key: string) => Promise<boolean>;

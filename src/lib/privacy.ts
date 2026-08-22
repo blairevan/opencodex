@@ -7,7 +7,8 @@ export function maskEmail(value: string | null | undefined): string | null {
   if (!domain) return value;
   if (local.length === 1) return `*@${domain}`;
   if (local.length === 2) return `${local[0]}*@${domain}`;
-  return `${local[0]}***${local[local.length - 1]}@${domain}`;
+  if (local.length < 5) return `${local[0]}***${local[local.length - 1]}@${domain}`;
+  return `${local.slice(0, 2)}***${local.slice(-2)}@${domain}`;
 }
 
 export function maskAccountId(value: string | null | undefined): string | null {

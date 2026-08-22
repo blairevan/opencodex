@@ -34,7 +34,7 @@ describe("OAuth status privacy", () => {
     const status = getLoginStatus("xai");
 
     expect(status.loggedIn).toBe(true);
-    expect(status.email).toBe("p***n@example.test");
+    expect(status.email).toBe("pe***on@example.test");
     expect(status.source).toBe("local-cli");
     expect(JSON.stringify(status)).not.toContain("person@example.test");
     expect(JSON.stringify(status)).not.toContain("access-token");

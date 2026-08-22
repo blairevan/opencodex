@@ -16,6 +16,7 @@ export interface OAuthAccount {
   alias?: string;
   email?: string;
   active: boolean;
+  enabled?: boolean;
   needsReauth?: boolean;
   expiresAt?: number;
   health?: { status: "healthy" | "cooldown" | "reauth_required" | "warning"; reason?: string; until?: string };
@@ -237,6 +238,24 @@ export function useProviderAccountPools(deps: {
     }
   };
 
+  const setAccountEnabled = async (provider: string, account: OAuthAccount, enabled: boolean) => {
+    try {
+      const res = await fetch(`${apiBase}/api/oauth/accounts/enabled`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, accountId: account.id, enabled }),
+      });
+      if (!res.ok) {
+        notify(t("pws.accountEnableFailed"), false);
+        return;
+      }
+      await fetchAccountSets([provider]);
+      notify(t(enabled ? "pws.accountEnabled" : "pws.accountDisabled"), true);
+    } catch {
+      notify(t("pws.accountEnableFailed"), false);
+    }
+  };
+
   const oauthCardProviders = useMemo(
     () => config ? Object.entries(config.providers).filter(([, p]) => p.authMode === "oauth").map(([n]) => n) : [],
     [config],
@@ -275,7 +294,7 @@ export function useProviderAccountPools(deps: {
   return {
     accountSets, accountLoadStates, switchingAccount, openAccounts, keyPools, addingKeyFor, newKeyValue,
     setAccountSets, setAccountLoadStates, setSwitchingAccount, setOpenAccounts, setKeyPools, setAddingKeyFor, setNewKeyValue,
-    fetchAccountSets, fetchKeyPools, switchAccount, switchApiKey, removeApiKey, addApiKeyValue, addApiKey, editCredentialAlias, removeAccount,
+    fetchAccountSets, fetchKeyPools, switchAccount, switchApiKey, removeApiKey, addApiKeyValue, addApiKey, editCredentialAlias, removeAccount, setAccountEnabled,
     oauthCardProviders, keyCardProviders, activeAccountNeedsReauth,
   };
 }

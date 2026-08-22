@@ -321,6 +321,7 @@ function normalizeAccount(value: unknown): ProviderAccount | null {
   const account: ProviderAccount = { id: candidate.id, credential };
   if (typeof candidate.alias === "string" && candidate.alias.trim()) account.alias = candidate.alias.trim();
   if (candidate.needsReauth === true) account.needsReauth = true;
+  if (candidate.enabled === false) account.enabled = false;
   if (typeof candidate.addedAt === "number") account.addedAt = candidate.addedAt;
   return account;
 }
@@ -662,6 +663,17 @@ export async function setAccountAlias(provider: string, accountId: string, alias
   }, [provider, accountId, alias]);
 }
 
+/** Enable or disable one account for provider-pool routing without removing its credentials. */
+export async function setAccountEnabled(provider: string, accountId: string, enabled: boolean): Promise<boolean> {
+  return await mutateStore(store => {
+    const account = store[provider]?.accounts.find(a => a.id === accountId);
+    if (!account) return false;
+    if (enabled) delete account.enabled;
+    else account.enabled = false;
+    return true;
+  }, [provider, accountId, enabled]);
+}
+
 /** Remove one account by id; active removal promotes the first remaining account. */
 export async function removeAccount(provider: string, accountId: string): Promise<boolean> {
   const removed = await mutateStore(store => {
@@ -697,6 +709,7 @@ export async function replaceProviderAccountSet(
         credential: { ...account.credential, ...(account.credential.kiro ? { kiro: { ...account.credential.kiro } } : {}) },
         ...(account.alias ? { alias: account.alias } : {}),
         ...(account.needsReauth ? { needsReauth: true } : {}),
+        ...(account.enabled === false ? { enabled: false } : {}),
         ...(account.addedAt !== undefined ? { addedAt: account.addedAt } : {}),
       })),
     };

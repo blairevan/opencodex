@@ -66,6 +66,16 @@ describe("antigravity-routing", () => {
     expect(res.reason).toBe("pool-disabled");
   });
 
+  test("does not route to a disabled active account when the pool is disabled", async () => {
+    await mutateStore(store => {
+      const account = store["google-antigravity"]?.accounts.find(item => item.id === "acc-1");
+      if (account) account.enabled = false;
+    });
+    const res = resolveAntigravityAccountForSession("single-account-mode", "gemini-3.1-pro", {});
+    expect(res.accountId).toBe("acc-2");
+    expect(res.reason).toBe("pool-disabled");
+  });
+
   test("maintains session affinity across requests", () => {
     bindAntigravitySessionAffinity("session-123", "acc-2");
     const res = resolveAntigravityAccountForSession("session-123", "gemini-3.1-pro", configPoolEnabled);
@@ -105,6 +115,23 @@ describe("antigravity-routing", () => {
     const res = resolveAntigravityAccountForSession("new-session-2", "claude-3.7-sonnet", configPoolEnabled);
     expect(res.accountId).toBe("acc-2");
     expect(res.reason).toBe("lowest-usage");
+  });
+
+  test("excludes an explicitly disabled account from Antigravity routing", async () => {
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [{ label: "Gemini (5h)", percent: 90 }],
+      updatedAt: Date.now(),
+    });
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-2", {
+      customWindows: [{ label: "Gemini (5h)", percent: 10 }],
+      updatedAt: Date.now(),
+    });
+    await mutateStore(store => {
+      const account = store["google-antigravity"]?.accounts.find(item => item.id === "acc-2");
+      if (account) (account as typeof account & { enabled?: boolean }).enabled = false;
+    });
+    const res = resolveAntigravityAccountForSession("disabled-account-session", "gemini-3.1-pro", configPoolEnabled);
+    expect(res.accountId).toBe("acc-1");
   });
 
   test("429 failover cools the failed account and fails over to healthy account", () => {

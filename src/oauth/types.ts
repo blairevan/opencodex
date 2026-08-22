@@ -38,6 +38,8 @@ export interface ProviderAccount {
   credential: OAuthCredentials;
   /** Terminal refresh failure (invalid_grant / reused / revoked) — re-login required. */
   needsReauth?: boolean;
+  /** Whether this account participates in provider-pool routing; omitted means enabled. */
+  enabled?: boolean;
   addedAt?: number;
 }
 

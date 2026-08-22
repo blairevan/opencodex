@@ -101,3 +101,49 @@
   color: var(--amber);
   font-size: 12px;
 }
+
+/* Account cards keep each quota window compact: label, bar, percentage, reset time. */
+.quota-inline-row {
+  display: grid;
+  grid-template-columns: minmax(42px, auto) minmax(48px, 1fr) auto minmax(64px, auto);
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-inline-label {
+  grid-column: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.quota-inline-bar {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.quota-inline-used {
+  grid-column: 3;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.quota-inline-used--warn {
+  color: var(--amber);
+}
+
+.quota-inline-reset {
+  grid-column: 4;
+  text-align: right;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.quota-inline-limit-reached {
+  grid-column: 2 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--amber);
+  font-size: 12px;
+}

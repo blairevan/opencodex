@@ -225,6 +225,7 @@ export function getEligibleAntigravityAccounts(now = Date.now()): string[] {
   return set.accounts
     .filter(account =>
       account.needsReauth !== true
+      && account.enabled !== false
       && !isCooled(account.id, now)
       && isPoolCredentialUsable(account.id))
     .map(account => account.id);
@@ -405,14 +406,17 @@ export function resolveAntigravityAccountForSession(
   if (!set || set.accounts.length === 0) return { accountId: null, reason: "none" };
 
   if (!isAntigravityAccountPoolEnabled(config)) {
-    return { accountId: set.activeAccountId, reason: "pool-disabled" };
+    const active = set.accounts.find(account => account.id === set.activeAccountId);
+    if (active?.enabled !== false) return { accountId: set.activeAccountId, reason: "pool-disabled" };
+    const fallback = getEligibleAntigravityAccounts(now)[0] ?? null;
+    return { accountId: fallback, reason: "pool-disabled" };
   }
 
   const key = normalizeAffinityComponent(sessionKey);
   if (key) {
     const affined = sessionAffinity.get(key);
     if (affined && now - affined.lastUsedAt <= AFFINITY_IDLE_TTL_MS) {
-      const stillThere = set.accounts.some(a => a.id === affined.accountId && a.needsReauth !== true);
+      const stillThere = set.accounts.some(a => a.id === affined.accountId && a.needsReauth !== true && a.enabled !== false);
       if (stillThere && !isCooled(affined.accountId, now) && isPoolCredentialUsable(affined.accountId)) {
         affined.lastUsedAt = now;
         return { accountId: affined.accountId, reason: "affinity" };
@@ -423,7 +427,7 @@ export function resolveAntigravityAccountForSession(
 
   const strategy = antigravityPoolStrategy(config);
   if (!key && (strategy === "round-robin" || strategy === "fill-first")) {
-    const activeOk = set.accounts.some(a => a.id === set.activeAccountId && a.needsReauth !== true)
+    const activeOk = set.accounts.some(a => a.id === set.activeAccountId && a.needsReauth !== true && a.enabled !== false)
       && !isCooled(set.activeAccountId, now)
       && isPoolCredentialUsable(set.activeAccountId);
     if (activeOk) {
@@ -441,7 +445,7 @@ export function resolveAntigravityAccountForSession(
   }
 
   const threshold = antigravityAutoSwitchThreshold(config);
-  const activeOk = set.accounts.some(a => a.id === set.activeAccountId && a.needsReauth !== true)
+  const activeOk = set.accounts.some(a => a.id === set.activeAccountId && a.needsReauth !== true && a.enabled !== false)
     && !isCooled(set.activeAccountId, now)
     && isPoolCredentialUsable(set.activeAccountId);
 

@@ -119,4 +119,31 @@ describe("Google Antigravity account pool strategy management API", () => {
       await server.stop(true);
     }
   });
+
+  test("GET and PUT /api/oauth/accounts/enabled manage per-account routing state", async () => {
+    const server = startServer(0);
+    try {
+      const initial = await fetch(new URL("/api/oauth/accounts?provider=google-antigravity", server.url));
+      expect(await initial.json()).toMatchObject({
+        accounts: [
+          { id: "ga1111", enabled: true },
+          { id: "ga2222", enabled: true },
+        ],
+      });
+
+      const put = await fetch(new URL("/api/oauth/accounts/enabled", server.url), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "google-antigravity", accountId: "ga2222", enabled: false }),
+      });
+      expect(put.status).toBe(200);
+      expect(await put.json()).toMatchObject({ ok: true, accountId: "ga2222", enabled: false });
+
+      const after = await fetch(new URL("/api/oauth/accounts?provider=google-antigravity", server.url));
+      const afterBody = await after.json() as { accounts?: Array<{ id?: string; enabled?: boolean }> };
+      expect(afterBody.accounts?.find(account => account.id === "ga2222")).toMatchObject({ id: "ga2222", enabled: false });
+    } finally {
+      await server.stop(true);
+    }
+  });
 });

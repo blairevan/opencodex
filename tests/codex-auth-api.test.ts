@@ -816,6 +816,7 @@ describe("codex-auth API", () => {
     expect(maskEmail("a@example.test")).toBe("*@example.test");
     expect(maskEmail("ab@example.test")).toBe("a*@example.test");
     expect(maskEmail("abcd@example.test")).toBe("a***d@example.test");
+    expect(maskEmail("haijun@example.test")).toBe("ha***un@example.test");
     expect(maskEmail("Codex App login")).toBe("Codex App login");
     expect(maskEmail(null)).toBeNull();
   });
@@ -836,7 +837,7 @@ describe("codex-auth API", () => {
     const resp = await handleCodexAuthAPI(req, new URL(req.url), config);
     const data = await resp!.json() as { accounts: { id: string; email: string }[] };
 
-    expect(data.accounts.find(a => a.id === "pool-mask")?.email).toBe("p***n@example.test");
+    expect(data.accounts.find(a => a.id === "pool-mask")?.email).toBe("pe***on@example.test");
   });
 
   test("GET /api/codex-auth/accounts omits a malformed persisted plan", async () => {
@@ -956,7 +957,7 @@ describe("codex-auth API", () => {
 
     expect(pool).toMatchObject({
       id: "pool-safe",
-      email: "p***n@example.test",
+      email: "pe***on@example.test",
       plan: "Plus",
       logLabel: fallbackCodexAccountLogLabel("pool-safe"),
       isMain: false,

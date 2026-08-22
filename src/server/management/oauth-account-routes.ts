@@ -253,7 +253,11 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
               needsReauth: summary.needsReauth === true,
               reauthReason: summary.needsReauth === true ? "refresh_failed" : undefined,
             });
-          return { ...summary, ...oauthAccountHealthFields(provider, summary.id, health) };
+          return {
+            ...summary,
+            enabled: full?.enabled !== false,
+            ...oauthAccountHealthFields(provider, summary.id, health),
+          };
         }),
       };
     };
@@ -302,6 +306,22 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
     const { clearProviderQuotaCache } = await import("../../providers/quota");
     clearProviderQuotaCache();
     return jsonResponse({ ok: true, provider, activeAccountId: body.accountId });
+  }
+
+  if (url.pathname === "/api/oauth/accounts/enabled" && req.method === "PUT") {
+    const body = await readManagementJsonBodyOr(req, {}) as { provider?: unknown; accountId?: unknown; enabled?: unknown };
+    const provider = typeof body.provider === "string" ? body.provider.trim().toLowerCase() : "";
+    const accountId = typeof body.accountId === "string" ? body.accountId.trim() : "";
+    if (!isPublicOAuthProvider(provider)) return jsonResponse({ error: "unknown oauth provider" }, 400);
+    if (!accountId) return jsonResponse({ error: "missing accountId" }, 400);
+    if (typeof body.enabled !== "boolean") return jsonResponse({ error: "enabled must be boolean" }, 400);
+    const { setAccountEnabled } = await import("../../oauth/store");
+    if (!(await setAccountEnabled(provider, accountId, body.enabled))) return jsonResponse({ error: "account not found" }, 404);
+    if (!body.enabled && provider === "google-antigravity") {
+      const { clearAntigravitySessionAffinityForAccount } = await import("../../oauth/antigravity-routing");
+      clearAntigravitySessionAffinityForAccount(accountId);
+    }
+    return jsonResponse({ ok: true, provider, accountId, enabled: body.enabled });
   }
 
   // Opt-in Anthropic OAuth account pool (#294): enable/threshold/strategy + clear cooldown.

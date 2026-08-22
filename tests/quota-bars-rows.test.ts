@@ -126,8 +126,8 @@ describe("formatResetFuture", () => {
   const NOW = new Date(2026, 6, 17, 12, 0, 0).getTime();
 
   test("branches: minutes, hours, today, tomorrow, date, date+year, past, invalid", () => {
-    expect(formatResetFuture(NOW + 30 * 60_000, t, "en", NOW)).toBe("quota.resetsRelativeMinutes:30");
-    expect(formatResetFuture(NOW + 3 * 3_600_000, t, "en", NOW)).toBe("quota.resetsRelativeHours:3");
+    expect(formatResetFuture(NOW + 30 * 60_000, t, "en", NOW)).toBe("quota.resetsRelativeMinutes:30,12:30");
+    expect(formatResetFuture(NOW + 3 * 3_600_000, t, "en", NOW)).toBe("quota.resetsRelativeHours:3,15:00");
     // Same calendar day but past the 12h relative window → today copy.
     const lateToday = new Date(2026, 6, 17, 23, 59).getTime();
     expect(formatResetFuture(lateToday, t, "en", NOW)).toContain("quota.resetsToday");
@@ -147,6 +147,6 @@ describe("formatResetFuture", () => {
 
   test("seconds-epoch inputs are normalized to milliseconds", () => {
     const secs = Math.floor((NOW + 30 * 60_000) / 1000);
-    expect(formatResetFuture(secs, t, "en", NOW)).toBe("quota.resetsRelativeMinutes:30");
+    expect(formatResetFuture(secs, t, "en", NOW)).toBe("quota.resetsRelativeMinutes:30,12:30");
   });
 });

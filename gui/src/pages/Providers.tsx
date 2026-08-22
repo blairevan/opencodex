@@ -180,7 +180,7 @@ export default function Providers({ apiBase }: { apiBase: string }) {
   const {
     accountSets, setAccountSets, accountLoadStates, switchingAccount, keyPools, fetchAccountSets,
     switchAccount, switchApiKey, removeApiKey, addApiKeyValue, editCredentialAlias,
-    removeAccount, activeAccountNeedsReauth,
+    removeAccount, setAccountEnabled, activeAccountNeedsReauth,
   } = pools;
   const jsonEditor = useJsonConfigEditor({
     apiBase, config,
@@ -369,6 +369,7 @@ export default function Providers({ apiBase }: { apiBase: string }) {
               onReauth: (provider, accountId) => loginOAuth(provider, true, accountId),
               onSwitchAccount: switchAccount,
               onRemoveAccount: removeAccount,
+              onSetAccountEnabled: setAccountEnabled,
               onRetryAccounts: async provider => { await fetchAccountSets([provider]); },
               onRefreshAccounts: async provider => { await fetchAccountSets([provider], true); await fetchProviderQuotas(true); },
               onAddApiKey: addApiKeyValue,

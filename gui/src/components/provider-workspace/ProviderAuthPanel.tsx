@@ -123,6 +123,7 @@ export default function ProviderAuthPanel({
   const [importStatus, setImportStatus] = useState<"idle" | "invalid" | "failed" | "complete">("idle");
   const [importResult, setImportResult] = useState<CockpitImportResult | null>(null);
   const [refreshingQuota, setRefreshingQuota] = useState(false);
+  const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(() => new Set());
   const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
     try {
       return localStorage.getItem("ocx_antigravity_auto_refresh") === "true";
@@ -194,6 +195,7 @@ export default function ProviderAuthPanel({
   const surface = providerAuthSurface({ ...item, hasApiKey: item.hasApiKey || keys.length > 0 });
   const isOauth = surface === "oauth-accounts";
   const isKeyAuth = surface === "api-keys";
+  const allAccountsExpanded = accounts.length > 0 && accounts.every(account => !collapsedAccountIds.has(account.id));
 
   if (surface === "codex-accounts") {
     return (
@@ -306,6 +308,20 @@ export default function ProviderAuthPanel({
         <h3 className="pwi-section-title" style={{ margin: 0 }}>{isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}</h3>
         {isOauth && accounts.length > 0 && (
           <div className="pwi-auth-header-actions">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setCollapsedAccountIds(current => {
+                const next = new Set(current);
+                if (allAccountsExpanded) accounts.forEach(account => next.add(account.id));
+                else accounts.forEach(account => next.delete(account.id));
+                return next;
+              })}
+              aria-label={t(allAccountsExpanded ? "pws.collapseAllAccounts" : "pws.expandAllAccounts")}
+              title={t(allAccountsExpanded ? "pws.collapseAllAccounts" : "pws.expandAllAccounts")}
+            >
+              {t(allAccountsExpanded ? "pws.collapseAllAccounts" : "pws.expandAllAccounts")}
+            </button>
             <div className="pwi-auto-refresh-control">
               <button
                 type="button"
@@ -359,66 +375,32 @@ export default function ProviderAuthPanel({
       <div className="pwi-auth-body">
         {isOauth && (
           <>
-            {(item.name === "anthropic" || item.name === "google-antigravity") && (
-              <AnthropicAccountPoolSettings provider={item.name as "anthropic" | "google-antigravity"} apiBase={apiBase} accountCount={accounts.length} />
+            {item.name === "anthropic" && (
+              <AnthropicAccountPoolSettings provider="anthropic" apiBase={apiBase} accountCount={accounts.length} />
             )}
-            {item.name === "google-antigravity" && (
-              <div className="pwi-auth-add-key">
-                <div>
-                  <div id="cockpit-import-description" className="pwi-auth-row-secondary">
-                    {t("pws.cockpitImportDescription")}
-                  </div>
-                  <label className="sr-only" htmlFor="cockpit-import-file">{t("pws.cockpitImportFileLabel")}</label>
-                  <input
-                    ref={importFileRef}
-                    id="cockpit-import-file"
-                    type="file"
-                    accept="application/json,.json"
-                    className="sr-only"
-                    aria-describedby="cockpit-import-description cockpit-import-status"
-                    disabled={importBusy}
-                    onChange={event => { void importCockpitFile(event.currentTarget.files?.[0]); }}
-                  />
-                </div>
-                <button type="button" className="btn btn-ghost btn-sm" disabled={importBusy}
-                  onClick={() => importFileRef.current?.click()}>
-                  {importBusy ? t("pws.cockpitImporting") : t("pws.cockpitImportChooseFile")}
-                </button>
-                <div id="cockpit-import-status" role="status" aria-live="polite">
-                  {importStatus === "invalid" && t("pws.cockpitImportInvalid")}
-                  {importStatus === "failed" && t("pws.cockpitImportFailed")}
-                  {importStatus === "complete" && importResult && t("pws.cockpitImportComplete", {
-                    imported: importResult.importedCount,
-                    updated: importResult.updatedCount,
-                    failed: importResult.failedCount,
-                    unsupported: importResult.unsupportedCount,
-                  })}
-                </div>
+            {accounts.length === 0 && (
+              <div className="pwi-auth-status-row">
+                <span className={`pwi-auth-dot ${activeNeedsReauth ? "pwi-auth-dot--warn" : loggedIn ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
+                <span className="pwi-auth-status-text">
+                  {loggedIn ? (oauth?.email ?? t("pws.loggedInTitle")) : (oauth?.error || t("pws.notLoggedInTitle"))}
+                </span>
+                <span className="pwi-auth-actions">
+                  {activeReauthAccount && (
+                    <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void authHandlers.onReauth(item.name, activeReauthAccount.id)}>
+                      {t("pws.reauthenticate")}
+                    </button>
+                  )}
+                  {loggedIn ? (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => void authHandlers.onLogout(item.name)}>{t("prov.logout")}</button>
+                  ) : (
+                    <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void authHandlers.onLogin(item.name, false)}>
+                      {busy ? <span className="pwi-spin-inline" aria-hidden="true" /> : <IconLock style={{ width: 13, height: 13 }} aria-hidden="true" />}
+                      {busy ? t("prov.waitingBrowser") : t("prov.login")}
+                    </button>
+                  )}
+                </span>
               </div>
             )}
-            <div className="pwi-auth-status-row">
-              <span className={`pwi-auth-dot ${activeNeedsReauth ? "pwi-auth-dot--warn" : loggedIn ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
-              <span className="pwi-auth-status-text">
-                {loggedIn
-                  ? (accounts.length > 0 ? t("pws.loggedInTitle") : (oauth?.email ?? t("pws.loggedInTitle")))
-                  : (oauth?.error || t("pws.notLoggedInTitle"))}
-              </span>
-              <span className="pwi-auth-actions">
-                {activeReauthAccount && (
-                  <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void authHandlers.onReauth(item.name, activeReauthAccount.id)}>
-                    {t("pws.reauthenticate")}
-                  </button>
-                )}
-                {loggedIn ? (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => void authHandlers.onLogout(item.name)}>{t("prov.logout")}</button>
-                ) : (
-                  <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void authHandlers.onLogin(item.name, false)}>
-                    {busy ? <span className="pwi-spin-inline" aria-hidden="true" /> : <IconLock style={{ width: 13, height: 13 }} aria-hidden="true" />}
-                    {busy ? t("prov.waitingBrowser") : t("prov.login")}
-                  </button>
-                )}
-              </span>
-            </div>
             {busy && hintForThis && (
               <div className="pwi-auth-wait">
                 <span className="pwi-spin-inline" aria-hidden="true" />
@@ -467,18 +449,21 @@ export default function ProviderAuthPanel({
                   const healthStatus = account.health?.status;
                   const showReauth = Boolean(account.needsReauth) || oauthHealthShowsReauth(healthStatus);
                   const inCooldown = oauthHealthIsCooldown(healthStatus);
+                  const accountRestricted = inCooldown || account.quotaUnavailable === true;
                   const maskedId = displayAccountId(account.id);
                   const healthLabel = formatOAuthHealthLabel(t, account.health);
                   const healthSummary = formatOAuthHealthSummary(t, item.name, account.id, account.health);
+                  const accountEnabled = account.enabled !== false;
+                  const accountExpanded = !collapsedAccountIds.has(account.id);
                   return (
                   <li key={account.id} className={`pwi-auth-acct${account.active ? " pwi-auth-acct--active" : ""}`}>
                     <div className={`pwi-auth-row${account.active ? " pwi-auth-row--active" : ""}`}>
                     <button type="button" className="pwi-auth-row-main"
-                      onClick={() => { if (!account.active && !showReauth && !inCooldown && !switchingAccountId) void authHandlers.onSwitchAccount(item.name, account); }}
+                      onClick={() => { if (accountEnabled && !account.active && !showReauth && !inCooldown && !switchingAccountId) void authHandlers.onSwitchAccount(item.name, account); }}
                       aria-current={account.active ? "true" : undefined}
                       aria-label={`${label}${account.active ? ` — ${t("pws.accountCurrent")}` : ""}`}
-                      disabled={Boolean(showReauth || inCooldown || (switchingAccountId && !switching))}>
-                      <span className={`pwi-auth-dot ${showReauth ? "pwi-auth-dot--warn" : account.active ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
+                      disabled={Boolean(!accountEnabled || showReauth || inCooldown || (switchingAccountId && !switching))}>
+                      <span className={`pwi-auth-dot ${showReauth ? "pwi-auth-dot--warn" : accountRestricted ? "pwi-auth-dot--error" : account.active ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
                       <span className="pwi-auth-row-copy">
                         <span className="pwi-auth-row-label">{label}</span>
                         <span className="pwi-auth-row-secondary">{[account.email, `${t("prov.accountId")}: ${maskedId}`].filter(Boolean).join(" · ")}</span>
@@ -496,6 +481,21 @@ export default function ProviderAuthPanel({
                       {account.active && <span className="badge badge-primary">{t("prov.accountActive")}</span>}
                       {switching && <span className="badge badge-muted">{t("pws.accountSwitching")}</span>}
                     </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      aria-expanded={accountExpanded}
+                      aria-label={t(accountExpanded ? "pws.collapseAccount" : "pws.expandAccount")}
+                      title={t(accountExpanded ? "pws.collapseAccount" : "pws.expandAccount")}
+                      onClick={() => setCollapsedAccountIds(current => {
+                        const next = new Set(current);
+                        if (accountExpanded) next.add(account.id);
+                        else next.delete(account.id);
+                        return next;
+                      })}
+                    >
+                      {t(accountExpanded ? "pws.collapseAccount" : "pws.expandAccount")}
+                    </button>
                     {showReauth && (
                       <button
                         type="button"
@@ -505,6 +505,24 @@ export default function ProviderAuthPanel({
                       >
                         {t("pws.reauthenticate")}
                       </button>
+                    )}
+                    {item.name === "google-antigravity" && (
+                      <div className="pwi-auto-refresh-control">
+                        <button
+                          type="button"
+                          className={`toggle toggle-sm ${accountEnabled ? "on" : ""}`}
+                          aria-pressed={accountEnabled}
+                          aria-label={t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
+                          title={t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
+                          disabled={busy || Boolean(switchingAccountId)}
+                          onClick={() => void authHandlers.onSetAccountEnabled(item.name, account, !accountEnabled)}
+                        >
+                          <span className="toggle-knob" />
+                        </button>
+                        <span className="pwi-auto-refresh-title">
+                          {t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
+                        </span>
+                      </div>
                     )}
                     <button type="button" className="btn btn-ghost btn-sm"
                       onClick={() => void authHandlers.onEditAlias(item.name, "oauth", account.id, account.alias)}>
@@ -518,7 +536,7 @@ export default function ProviderAuthPanel({
                       <IconTrash style={{ width: 13, height: 13 }} aria-hidden="true" />
                     </button>
                     </div>
-                    {(account.quota != null || account.quotaUnavailable || (reserveQuotaSlots && account.quota == null)) && (
+                    {accountExpanded && (account.quota != null || account.quotaUnavailable || (reserveQuotaSlots && account.quota == null)) && (
                       <div className="pwi-auth-acct-quota">
                         {account.quotaUnavailable ? (
                           <p className="muted pwi-auth-acct-quota-stale">{t("pws.accountQuotaUnavailable")}</p>
@@ -528,7 +546,7 @@ export default function ProviderAuthPanel({
                             plan={null}
                             threshold={80}
                             t={t}
-                            layout="stacked"
+                            layout="inline"
                             pending={account.quota == null}
                           />
                         )}
@@ -547,6 +565,43 @@ export default function ProviderAuthPanel({
                 onClick={() => void authHandlers.onLogin(item.name, true)} disabled={busy || Boolean(switchingAccountId)}>
                 {t("pws.addAccount")}
               </button>
+            )}
+            {item.name === "google-antigravity" && (
+              <>
+                <AnthropicAccountPoolSettings provider="google-antigravity" apiBase={apiBase} accountCount={accounts.length} />
+                <div className="pwi-auth-add-key">
+                  <div>
+                    <div id="cockpit-import-description" className="pwi-auth-row-secondary">
+                      {t("pws.cockpitImportDescription")}
+                    </div>
+                    <label className="sr-only" htmlFor="cockpit-import-file">{t("pws.cockpitImportFileLabel")}</label>
+                    <input
+                      ref={importFileRef}
+                      id="cockpit-import-file"
+                      type="file"
+                      accept="application/json,.json"
+                      className="sr-only"
+                      aria-describedby="cockpit-import-description cockpit-import-status"
+                      disabled={importBusy}
+                      onChange={event => { void importCockpitFile(event.currentTarget.files?.[0]); }}
+                    />
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={importBusy}
+                    onClick={() => importFileRef.current?.click()}>
+                    {importBusy ? t("pws.cockpitImporting") : t("pws.cockpitImportChooseFile")}
+                  </button>
+                  <div id="cockpit-import-status" role="status" aria-live="polite">
+                    {importStatus === "invalid" && t("pws.cockpitImportInvalid")}
+                    {importStatus === "failed" && t("pws.cockpitImportFailed")}
+                    {importStatus === "complete" && importResult && t("pws.cockpitImportComplete", {
+                      imported: importResult.importedCount,
+                      updated: importResult.updatedCount,
+                      failed: importResult.failedCount,
+                      unsupported: importResult.unsupportedCount,
+                    })}
+                  </div>
+                </div>
+              </>
             )}
           </>
         )}
