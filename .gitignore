@@ -68,6 +68,7 @@ devlog/**/security-advisory-draft*
 # "Security working notes" section of AGENTS.md.
 .tmp/
 .opencode/
+.superpowers/
 
 # Capability probes from the trusted-artifact directory check
 # (src/lab/artifacts/secure-fs.ts detectArtifactIoMode). The probe is normally
