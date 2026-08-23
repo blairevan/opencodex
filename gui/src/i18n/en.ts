@@ -1158,6 +1158,7 @@ export const en = {
   "pws.retryAccounts": "Retry",
   "pws.refreshQuota": "Refresh quota",
   "pws.refreshingQuota": "Refreshing…",
+  "pws.lastRefreshTime": "Last refreshed: {time}",
   "pws.autoRefresh": "Auto-refresh",
   "pws.interval10s": "10s",
   "pws.interval30s": "30s",

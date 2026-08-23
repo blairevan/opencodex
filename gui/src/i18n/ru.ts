@@ -1142,6 +1142,7 @@ export const ru: Record<TKey, string> = {
   "pws.retryAccounts": "Повторить",
   "pws.refreshQuota": "Обновить квоту",
   "pws.refreshingQuota": "Обновление…",
+  "pws.lastRefreshTime": "Последнее обновление: {time}",
   "pws.autoRefresh": "Автообновление",
   "pws.interval10s": "10 с",
   "pws.interval30s": "30 с",

@@ -110,6 +110,10 @@
   gap: 8px;
 }
 
+.quota-inline-row--exhausted {
+  grid-template-columns: minmax(42px, auto) minmax(72px, auto) minmax(48px, 1fr) auto minmax(64px, auto);
+}
+
 .quota-inline-label {
   grid-column: 1;
   min-width: 0;
@@ -140,10 +144,14 @@
 }
 
 .quota-inline-limit-reached {
-  grid-column: 2 / -1;
+  grid-column: 2;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   color: var(--amber);
   font-size: 12px;
 }
+
+.quota-inline-row--exhausted .quota-inline-bar { grid-column: 3; }
+.quota-inline-row--exhausted .quota-inline-used { grid-column: 4; }
+.quota-inline-row--exhausted .quota-inline-reset { grid-column: 5; }

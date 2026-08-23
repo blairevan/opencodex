@@ -29,6 +29,31 @@ const COCKPIT_IMPORT_MAX_BYTES = 256 * 1024;
 const EMPTY_OAUTH_ACCOUNTS: OAuthAccountRow[] = [];
 const EMPTY_API_KEYS: ApiKeyRow[] = [];
 
+/** Formats a quota refresh timestamp as the dashboard's fixed local date-time shape. */
+function formatQuotaRefreshTime(timestamp: number): string {
+  return new Intl.DateTimeFormat("sv-SE", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(timestamp));
+}
+
+/** Returns the newest quota timestamp received with the current account rows. */
+function latestAccountQuotaUpdate(accounts: OAuthAccountRow[]): number | null {
+  let latest: number | null = null;
+  for (const account of accounts) {
+    const updatedAt = account.quota?.updatedAt;
+    if (typeof updatedAt === "number" && Number.isFinite(updatedAt) && (latest === null || updatedAt > latest)) {
+      latest = updatedAt;
+    }
+  }
+  return latest;
+}
+
 type CockpitImportResult = {
   importedCount: number;
   updatedCount: number;
@@ -123,6 +148,7 @@ export default function ProviderAuthPanel({
   const [importStatus, setImportStatus] = useState<"idle" | "invalid" | "failed" | "complete">("idle");
   const [importResult, setImportResult] = useState<CockpitImportResult | null>(null);
   const [refreshingQuota, setRefreshingQuota] = useState(false);
+  const [lastManualQuotaRefreshAt, setLastManualQuotaRefreshAt] = useState<number | null>(null);
   const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(() => new Set());
   const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
     try {
@@ -196,6 +222,8 @@ export default function ProviderAuthPanel({
   const isOauth = surface === "oauth-accounts";
   const isKeyAuth = surface === "api-keys";
   const allAccountsExpanded = accounts.length > 0 && accounts.every(account => !collapsedAccountIds.has(account.id));
+  const lastQuotaRefreshAt = lastManualQuotaRefreshAt
+    ?? latestAccountQuotaUpdate(accounts);
 
   if (surface === "codex-accounts") {
     return (
@@ -236,6 +264,8 @@ export default function ProviderAuthPanel({
       } else if (authHandlers.onRetryAccounts) {
         await authHandlers.onRetryAccounts(item.name);
       }
+      const refreshedAt = Date.now();
+      setLastManualQuotaRefreshAt(refreshedAt);
     } finally {
       setRefreshingQuota(false);
     }
@@ -367,6 +397,11 @@ export default function ProviderAuthPanel({
               <IconRefresh style={{ width: 13, height: 13 }} className={refreshingQuota ? "pwi-spin-inline" : undefined} aria-hidden="true" />
               <span>{refreshingQuota ? t("pws.refreshingQuota") : t("pws.refreshQuota")}</span>
             </button>
+            <span className="pwi-last-refresh-time" aria-live="polite">
+              {t("pws.lastRefreshTime", {
+                time: lastQuotaRefreshAt === null ? "—" : formatQuotaRefreshTime(lastQuotaRefreshAt),
+              })}
+            </span>
           </div>
         )}
       </div>

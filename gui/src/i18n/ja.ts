@@ -1091,6 +1091,7 @@ export const ja: Record<TKey, string> = {
   "pws.retryAccounts": "再試行",
   "pws.refreshQuota": "クォータを更新",
   "pws.refreshingQuota": "更新中…",
+  "pws.lastRefreshTime": "最終更新: {time}",
   "pws.autoRefresh": "自動更新",
   "pws.interval10s": "10秒",
   "pws.interval30s": "30秒",

@@ -1694,6 +1694,7 @@ export const ko: Record<TKey, string> = {
   "pws.retryAccounts": "다시 시도",
   "pws.refreshQuota": "할당량 새로고침",
   "pws.refreshingQuota": "새로고침 중…",
+  "pws.lastRefreshTime": "마지막 새로고침: {time}",
   "pws.autoRefresh": "자동 새로고침",
   "pws.interval10s": "10초",
   "pws.interval30s": "30초",

@@ -1687,6 +1687,7 @@ export const zh: Record<TKey, string> = {
   "pws.retryAccounts": "重试",
   "pws.refreshQuota": "刷新配额",
   "pws.refreshingQuota": "正在刷新…",
+  "pws.lastRefreshTime": "最后刷新：{time}",
   "pws.autoRefresh": "自动刷新",
   "pws.interval10s": "10 秒",
   "pws.interval30s": "30 秒",

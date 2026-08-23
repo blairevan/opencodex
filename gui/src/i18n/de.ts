@@ -1667,6 +1667,7 @@ export const de: Record<TKey, string> = {
   "pws.retryAccounts": "Erneut versuchen",
   "pws.refreshQuota": "Kontingent aktualisieren",
   "pws.refreshingQuota": "Wird aktualisiert…",
+  "pws.lastRefreshTime": "Zuletzt aktualisiert: {time}",
   "pws.autoRefresh": "Autom. Aktualisierung",
   "pws.interval10s": "10s",
   "pws.interval30s": "30s",

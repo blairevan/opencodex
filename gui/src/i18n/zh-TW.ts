@@ -945,6 +945,7 @@ export const zhTW: Record<TKey, string> = {
   "pws.retryAccounts": "重試",
   "pws.refreshQuota": "重新整理配額",
   "pws.refreshingQuota": "正在重新整理…",
+  "pws.lastRefreshTime": "最後重新整理：{time}",
   "pws.autoRefresh": "自動重新整理",
   "pws.interval10s": "10 秒",
   "pws.interval30s": "30 秒",

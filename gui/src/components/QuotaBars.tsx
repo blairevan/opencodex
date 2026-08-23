@@ -317,6 +317,12 @@ function InlineQuotaRow({ row, threshold, t, locale }: {
   return (
     <div className={`quota-inline-row${warn ? " quota-inline-row--warn" : ""}${exhausted ? " quota-inline-row--exhausted" : ""}`}>
       <span className="quota-inline-label">{row.limitLabel}</span>
+      {exhausted && (
+        <span className="quota-inline-limit-reached" role="status">
+          <IconAlert width={12} height={12} aria-hidden="true" />
+          {t("quota.limitReached")}
+        </span>
+      )}
       <div className="bar quota-inline-bar">
         <div className={`bar-fill ${color}`} style={barFillStyle(row.percent)} />
       </div>
@@ -324,12 +330,6 @@ function InlineQuotaRow({ row, threshold, t, locale }: {
         {t("quota.usedPercent", { pct: Math.round(row.percent) })}
       </span>
       <span className="quota-inline-reset muted">{resetText}</span>
-      {exhausted && (
-        <span className="quota-inline-limit-reached" role="status">
-          <IconAlert width={12} height={12} aria-hidden="true" />
-          {t("quota.limitReached")}
-        </span>
-      )}
     </div>
   );
 }

@@ -1149,6 +1149,7 @@ export const tr: Record<TKey, string> = {
   "pws.retryAccounts": "Tekrar Dene",
   "pws.refreshQuota": "Kotayı Yenile",
   "pws.refreshingQuota": "Yenileniyor…",
+  "pws.lastRefreshTime": "Son yenileme: {time}",
   "pws.autoRefresh": "Otomatik Yenileme",
   "pws.interval10s": "10 sn",
   "pws.interval30s": "30 sn",

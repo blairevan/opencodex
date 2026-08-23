@@ -97,6 +97,11 @@
 .pwi-auth-refresh-btn:hover {
   color: var(--text);
 }
+.pwi-last-refresh-time {
+  color: var(--muted);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
 .pwi-auth-body { display: flex; flex-direction: column; gap: 10px; }
 
 .pwi-auth-status-row { display: flex; align-items: center; gap: 8px; }
