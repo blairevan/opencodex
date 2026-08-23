@@ -325,17 +325,15 @@ export default function ProviderAuthPanel({
             <div className="pwi-auto-refresh-control">
               <button
                 type="button"
-                className={`toggle toggle-sm ${autoRefresh ? "on" : ""}`}
+                className={`toggle toggle-with-label toggle-with-label--auto ${autoRefresh ? "on" : ""}`}
                 aria-pressed={autoRefresh}
                 aria-label={t("pws.autoRefresh")}
                 title={autoRefresh ? t("anthropicPool.on") : t("anthropicPool.off")}
                 onClick={() => setAutoRefresh(!autoRefresh)}
               >
+                <span className="toggle-label-text">{t("pws.autoRefresh")}</span>
                 <span className="toggle-knob" />
               </button>
-              <span className="pwi-auto-refresh-title" onClick={() => setAutoRefresh(!autoRefresh)}>
-                {t("pws.autoRefresh")}
-              </span>
               {autoRefresh && (
                 <>
                   <select
@@ -510,18 +508,18 @@ export default function ProviderAuthPanel({
                       <div className="pwi-auto-refresh-control">
                         <button
                           type="button"
-                          className={`toggle toggle-sm ${accountEnabled ? "on" : ""}`}
+                          className={`toggle toggle-with-label toggle-with-label--account ${accountEnabled ? "on" : ""}`}
                           aria-pressed={accountEnabled}
                           aria-label={t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
                           title={t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
                           disabled={busy || Boolean(switchingAccountId)}
                           onClick={() => void authHandlers.onSetAccountEnabled(item.name, account, !accountEnabled)}
                         >
+                          <span className="toggle-label-text">
+                            {t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
+                          </span>
                           <span className="toggle-knob" />
                         </button>
-                        <span className="pwi-auto-refresh-title">
-                          {t(accountEnabled ? "pws.accountEnabled" : "pws.accountDisabled")}
-                        </span>
                       </div>
                     )}
                     <button type="button" className="btn btn-ghost btn-sm"

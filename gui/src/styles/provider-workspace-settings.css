@@ -27,24 +27,39 @@
   border: none;
   height: 24px;
 }
-.toggle-sm {
-  width: 28px;
-  height: 16px;
-}
-.toggle-sm .toggle-knob {
-  width: 12px;
-  height: 12px;
-  left: 1px;
-}
-.toggle-sm.on .toggle-knob {
-  left: 13px;
-}
-.pwi-auto-refresh-title {
-  cursor: pointer;
-  user-select: none;
-  font-size: var(--text-label);
+.toggle-with-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 8px;
   color: var(--text);
-  margin-left: 1px;
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+.toggle-with-label--auto { min-width: 78px; }
+.toggle-with-label--account { min-width: 54px; }
+.toggle-with-label .toggle-label-text {
+  position: relative;
+  z-index: 1;
+}
+.toggle-with-label .toggle-knob {
+  position: relative;
+  inset: auto;
+  top: auto;
+  left: auto;
+  transform: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+.toggle.toggle-with-label.on {
+  padding-right: 8px;
+  padding-left: 4px;
+}
+.toggle.toggle-with-label.on .toggle-knob {
+  left: auto;
 }
 .pwi-auto-refresh-select {
   appearance: none;

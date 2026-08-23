@@ -1,8 +1,47 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
+!.env.sample
 *.log
+*.log.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.secret
+*.secrets
+*.credentials
+*.cookie
+credentials.json
+credentials.*.json
+secrets.json
+secrets.*.json
+cookies.json
+cookies.*.json
+config.local.*
+settings.local.*
+*.local.json
+*.local.yaml
+*.local.yml
+*.runtime.json
+*.runtime.yaml
+*.runtime.yml
+runtime-data/
+user-data/
+browser-data/
+browser-profile/
+.browser-profile/
+.playwright/
+.puppeteer/
+.cache/
+**/.cache/
 .DS_Store
+.idea/
+.vscode/
 
 # Generated CL compatibility identity embedded by prepare:package. It must stay
 # untracked so the manifest cannot hash itself.
