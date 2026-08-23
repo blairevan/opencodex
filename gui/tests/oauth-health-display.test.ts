@@ -10,8 +10,9 @@ import {
   oauthHealthIsCooldown,
   oauthHealthShowsDoctor,
   oauthHealthShowsReauth,
+  summarizeOAuthAccountStatuses,
 } from "../src/oauth-health-display";
-import { displayAccountId, maskAccountId } from "../src/lib/privacy";
+import { displayAccountId, maskAccountId, maskEmailUsername } from "../src/lib/privacy";
 import type { TFn } from "../src/i18n";
 
 const t: TFn = ((key: string, vars?: Record<string, string | number>) => {
@@ -126,5 +127,35 @@ describe("oauth health badge helpers", () => {
     expect(displayAccountId(null)).toBe("account-…");
     expect(displayAccountId("")).toBe("account-…");
     expect(displayAccountId("   ")).toBe("account-…");
+  });
+
+  test("maskEmailUsername keeps only the first and last two username characters", () => {
+    expect(maskEmailUsername("blair15@example.test")).toBe("bl***15");
+    expect(maskEmailUsername("ab@example.test")).toBe("**");
+  });
+
+  test("maskEmailUsername never exposes short usernames in full", () => {
+    expect(maskEmailUsername("abc@example.test")).toBe("***");
+    expect(maskEmailUsername("abcd@example.test")).toBe("****");
+    expect(maskEmailUsername(null)).toBe("account-…");
+  });
+
+  test("summarizeOAuthAccountStatuses counts normal and total accounts", () => {
+    const counts = summarizeOAuthAccountStatuses([
+      { enabled: true, active: true, health: { status: "healthy" } },
+      { enabled: true, active: false },
+    ]);
+    expect(counts).toEqual({ total: 2, normal: 2, disabled: 0, reauth: 0, restricted: 0, unavailable: 0 });
+  });
+
+  test("summarizeOAuthAccountStatuses applies mutually exclusive status priority", () => {
+    const counts = summarizeOAuthAccountStatuses([
+      { enabled: false, needsReauth: true, health: { status: "cooldown" }, quotaUnavailable: true },
+      { enabled: true, needsReauth: true, health: { status: "cooldown" } },
+      { enabled: true, health: { status: "cooldown" } },
+      { enabled: true, quotaUnavailable: true },
+      { enabled: true, health: { status: "warning" } },
+    ]);
+    expect(counts).toEqual({ total: 5, normal: 0, disabled: 1, reauth: 1, restricted: 2, unavailable: 1 });
   });
 });

@@ -3,18 +3,20 @@
  * embedding for the workspace Settings tab (WP091). Consumes WP040+WP060
  * handlers via props-down; no internal auth machinery.
  */
-import { useEffect, useRef, useState } from "react";
-import { useT } from "../../i18n/shared";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useT, type TFn } from "../../i18n/shared";
 import { IconLock, IconRefresh, IconTrash } from "../../icons";
 import type { WorkspaceItem } from "../../provider-workspace/catalog";
 import { oauthAccountDisplayLabel, providerAuthSurface } from "../../provider-workspace/auth";
-import { displayAccountId } from "../../lib/privacy";
+import { displayAccountId, maskEmailUsername } from "../../lib/privacy";
 import {
   formatOAuthHealthLabel,
   formatOAuthHealthSummary,
   oauthHealthBadgeClass,
   oauthHealthIsCooldown,
   oauthHealthShowsReauth,
+  summarizeOAuthAccountStatuses,
+  type OAuthAccountStatusCounts,
 } from "../../oauth-health-display";
 import CodexAccountPool from "../CodexAccountPool";
 import AnthropicAccountPoolSettings from "./AnthropicAccountPoolSettings";
@@ -28,6 +30,7 @@ const QUOTA_ENRICH_RESERVE_MS = 4_000;
 const COCKPIT_IMPORT_MAX_BYTES = 256 * 1024;
 const EMPTY_OAUTH_ACCOUNTS: OAuthAccountRow[] = [];
 const EMPTY_API_KEYS: ApiKeyRow[] = [];
+const ACCOUNT_STATUS_TOOLTIP_DELAY_MS = 300;
 
 /** Formats a quota refresh timestamp as the dashboard's fixed local date-time shape. */
 function formatQuotaRefreshTime(timestamp: number): string {
@@ -52,6 +55,63 @@ function latestAccountQuotaUpdate(accounts: OAuthAccountRow[]): number | null {
     }
   }
   return latest;
+}
+
+/** Builds the non-zero account status lines shown by the accounts heading tooltip. */
+function accountStatusHoverText(t: TFn, counts: OAuthAccountStatusCounts): string {
+  return [
+    counts.normal > 0 ? t("pws.accountStatus.normal", { count: counts.normal }) : null,
+    counts.restricted > 0 ? t("pws.accountStatus.restricted", { count: counts.restricted }) : null,
+    counts.disabled > 0 ? t("pws.accountStatus.disabled", { count: counts.disabled }) : null,
+    counts.reauth > 0 ? t("pws.accountStatus.reauth", { count: counts.reauth }) : null,
+    counts.unavailable > 0 ? t("pws.accountStatus.unavailable", { count: counts.unavailable }) : null,
+  ].filter((line): line is string => line !== null).join("\n");
+}
+
+/** Shows account status details after a short, deterministic hover/focus delay. */
+function AccountStatusTooltip({ details, children }: { details: string; children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  const clearTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const hide = () => {
+    clearTimer();
+    setVisible(false);
+  };
+
+  const showAfterDelay = () => {
+    clearTimer();
+    timerRef.current = window.setTimeout(() => {
+      setVisible(true);
+      timerRef.current = null;
+    }, ACCOUNT_STATUS_TOOLTIP_DELAY_MS);
+  };
+
+  useEffect(() => () => clearTimer(), []);
+
+  return (
+    <div
+      className="pwi-account-status-tooltip"
+      tabIndex={0}
+      onMouseEnter={showAfterDelay}
+      onMouseLeave={hide}
+      onFocus={showAfterDelay}
+      onBlur={hide}
+    >
+      {children}
+      {visible && (
+        <div className="pwi-account-status-tooltip-content" role="tooltip">
+          {details.split("\n").map(line => <div key={line}>{line}</div>)}
+        </div>
+      )}
+    </div>
+  );
 }
 
 type CockpitImportResult = {
@@ -149,6 +209,14 @@ export default function ProviderAuthPanel({
   const [importResult, setImportResult] = useState<CockpitImportResult | null>(null);
   const [refreshingQuota, setRefreshingQuota] = useState(false);
   const [lastManualQuotaRefreshAt, setLastManualQuotaRefreshAt] = useState<number | null>(null);
+  const [showAccountInfo, setShowAccountInfo] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("ocx_show_account_info");
+      return stored === null ? true : stored === "true";
+    } catch {
+      return true;
+    }
+  });
   const [collapsedAccountIds, setCollapsedAccountIds] = useState<Set<string>>(() => new Set());
   const [autoRefresh, setAutoRefresh] = useState<boolean>(() => {
     try {
@@ -176,6 +244,12 @@ export default function ProviderAuthPanel({
       localStorage.setItem("ocx_antigravity_refresh_interval", String(refreshInterval));
     } catch {}
   }, [autoRefresh, refreshInterval]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ocx_show_account_info", String(showAccountInfo));
+    } catch { /* ignore storage failures */ }
+  }, [showAccountInfo]);
 
   useEffect(() => {
     setCountdown(refreshInterval);
@@ -252,6 +326,12 @@ export default function ProviderAuthPanel({
       ? t("prov.linkCopyUnavailable")
       : t("prov.copyCode");
   const loggedIn = accounts.length > 0 || oauth?.loggedIn === true;
+  const accountStatusCounts = summarizeOAuthAccountStatuses(accounts);
+  const accountTitle = t("pws.availableAccountsCount", {
+    available: accountStatusCounts.normal,
+    total: accountStatusCounts.total,
+  });
+  const accountStatusDetails = accountStatusHoverText(t, accountStatusCounts);
   const activeReauthAccount = accounts.find(a => a.active && a.needsReauth);
   const activeNeedsReauth = Boolean(activeReauthAccount);
 
@@ -335,7 +415,19 @@ export default function ProviderAuthPanel({
   return (
     <section className="pwi-section pwi-auth-section" aria-label={isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}>
       <div className="pwi-auth-header-row">
-        <h3 className="pwi-section-title" style={{ margin: 0 }}>{isOauth ? t("pws.availableAccounts") : t("pws.apiKeys")}</h3>
+        {isOauth ? (
+          <AccountStatusTooltip details={accountStatusDetails}>
+            <h3
+              className="pwi-section-title"
+              style={{ margin: 0 }}
+              aria-label={`${accountTitle}. ${accountStatusDetails}`}
+            >
+              {accountTitle}
+            </h3>
+          </AccountStatusTooltip>
+        ) : (
+          <h3 className="pwi-section-title" style={{ margin: 0 }}>{t("pws.apiKeys")}</h3>
+        )}
         {isOauth && accounts.length > 0 && (
           <div className="pwi-auth-header-actions">
             <button
@@ -478,6 +570,9 @@ export default function ProviderAuthPanel({
               <ul className="pwi-auth-list">
                 {accounts.map(account => {
                   const label = oauthAccountDisplayLabel(accounts, account, t);
+                  const displayLabel = showAccountInfo
+                    ? label
+                    : account.alias?.trim() || (account.email ? maskEmailUsername(account.email) : label);
                   const switching = switchingAccountId === account.id;
                   const healthStatus = account.health?.status;
                   const showReauth = Boolean(account.needsReauth) || oauthHealthShowsReauth(healthStatus);
@@ -494,12 +589,14 @@ export default function ProviderAuthPanel({
                     <button type="button" className="pwi-auth-row-main"
                       onClick={() => { if (accountEnabled && !account.active && !showReauth && !inCooldown && !switchingAccountId) void authHandlers.onSwitchAccount(item.name, account); }}
                       aria-current={account.active ? "true" : undefined}
-                      aria-label={`${label}${account.active ? ` — ${t("pws.accountCurrent")}` : ""}`}
+                      aria-label={`${displayLabel}${account.active ? ` — ${t("pws.accountCurrent")}` : ""}`}
                       disabled={Boolean(!accountEnabled || showReauth || inCooldown || (switchingAccountId && !switching))}>
                       <span className={`pwi-auth-dot ${showReauth ? "pwi-auth-dot--warn" : accountRestricted ? "pwi-auth-dot--error" : account.active ? "pwi-auth-dot--ok" : "pwi-auth-dot--off"}`} aria-hidden="true" />
                       <span className="pwi-auth-row-copy">
-                        <span className="pwi-auth-row-label">{label}</span>
-                        <span className="pwi-auth-row-secondary">{[account.email, `${t("prov.accountId")}: ${maskedId}`].filter(Boolean).join(" · ")}</span>
+                        <span className="pwi-auth-row-label">{displayLabel}</span>
+                        {showAccountInfo && (
+                          <span className="pwi-auth-row-secondary">{[account.email, `${t("prov.accountId")}: ${maskedId}`].filter(Boolean).join(" · ")}</span>
+                        )}
                         {healthSummary && (
                           <span className="pwi-auth-row-secondary faint">{healthSummary}</span>
                         )}
@@ -635,6 +732,24 @@ export default function ProviderAuthPanel({
                   </div>
                 </div>
               </>
+            )}
+            {accounts.length > 0 && (
+              <div className="pwi-account-display-setting">
+                <span>{t("pws.showAccountInfo")}</span>
+                <button
+                  type="button"
+                  className={`toggle toggle-with-label toggle-with-label--account ${showAccountInfo ? "on" : ""}`}
+                  aria-pressed={showAccountInfo}
+                  aria-label={t("pws.showAccountInfo")}
+                  title={t("pws.showAccountInfo")}
+                  onClick={() => setShowAccountInfo(value => !value)}
+                >
+                  <span className="toggle-label-text">
+                    {showAccountInfo ? t("pws.accountEnabled") : t("pws.accountDisabled")}
+                  </span>
+                  <span className="toggle-knob" />
+                </button>
+              </div>
             )}
           </>
         )}

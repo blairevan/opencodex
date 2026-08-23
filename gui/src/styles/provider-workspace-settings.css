@@ -16,6 +16,29 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.pwi-account-status-tooltip {
+  position: relative;
+  min-width: 0;
+  outline: none;
+}
+.pwi-account-status-tooltip-content {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  min-width: max-content;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--raised);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .pwi-auto-refresh-control {
   display: inline-flex;
   align-items: center;
@@ -171,6 +194,17 @@
   cursor: pointer; padding: 4px 0; text-align: left;
 }
 .pwi-auth-add-key:hover { text-decoration: underline; }
+
+.pwi-account-display-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--muted);
+  font-size: var(--text-label);
+}
 
 @keyframes pwi-spin { to { transform: rotate(360deg); } }
 .pwi-spin-inline {

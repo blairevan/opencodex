@@ -27,6 +27,15 @@ export type OAuthHealthView = {
 
 export type OAuthHealthBadgeTone = "ok" | "warn" | "muted";
 
+export type OAuthAccountStatusCounts = {
+  total: number;
+  normal: number;
+  disabled: number;
+  reauth: number;
+  restricted: number;
+  unavailable: number;
+};
+
 export function oauthHealthBadgeTone(status: OAuthHealthStatus | undefined): OAuthHealthBadgeTone {
   if (status === "healthy") return "ok";
   if (status === "cooldown") return "muted";
@@ -59,6 +68,33 @@ export function accountNeedsReauth(
 /** Cooldown: show wait copy; do not urge probing or immediate retry. */
 export function oauthHealthIsCooldown(status: OAuthHealthStatus | undefined): boolean {
   return status === "cooldown";
+}
+
+/** Summarizes OAuth accounts into mutually exclusive UI status counts. */
+export function summarizeOAuthAccountStatuses(
+  accounts: readonly {
+    enabled?: boolean;
+    needsReauth?: boolean;
+    health?: { status?: OAuthHealthStatus } | null;
+    quotaUnavailable?: boolean;
+  }[],
+): OAuthAccountStatusCounts {
+  const counts: OAuthAccountStatusCounts = {
+    total: accounts.length,
+    normal: 0,
+    disabled: 0,
+    reauth: 0,
+    restricted: 0,
+    unavailable: 0,
+  };
+  for (const account of accounts) {
+    if (account.enabled === false) counts.disabled += 1;
+    else if (accountNeedsReauth(account)) counts.reauth += 1;
+    else if (oauthHealthIsCooldown(account.health?.status) || account.quotaUnavailable === true) counts.restricted += 1;
+    else if (account.health?.status === "warning") counts.unavailable += 1;
+    else counts.normal += 1;
+  }
+  return counts;
 }
 
 /** Non-healthy states where copying `ocx doctor` is a useful next step. */
@@ -170,4 +206,3 @@ export function doctorCopyButtonLabel(
   if (!outcome) return t("pws.copyDoctor");
   return outcome === "copied" ? t("pws.doctorCopied") : t("pws.doctorCopyUnavailable");
 }
-

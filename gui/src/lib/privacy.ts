@@ -12,3 +12,13 @@ export function maskAccountId(value: string | null | undefined): string | null {
 export function displayAccountId(value: string | null | undefined): string {
   return maskAccountId(value) ?? `account-…`;
 }
+
+/** Masks the local part of an email for privacy-safe account labels. */
+export function maskEmailUsername(value: string | null | undefined): string {
+  const email = value?.trim() ?? "";
+  const at = email.indexOf("@");
+  const username = (at >= 0 ? email.slice(0, at) : email).trim();
+  if (!username) return "account-…";
+  if (username.length <= 4) return "*".repeat(username.length);
+  return `${username.slice(0, 2)}***${username.slice(-2)}`;
+}
