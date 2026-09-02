@@ -249,7 +249,7 @@ export function isLoopbackHostname(hostname: string | undefined): boolean {
   // A fully-qualified "localhost." is the same host as "localhost": curl and some clients
   // send the trailing dot verbatim, and refusing it 403s a legitimate loopback caller.
   const normalized = (hostname ?? "127.0.0.1").trim().toLowerCase().replace(/\.$/, "");
-  return normalized === "" || normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
+  return normalized === "" || normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]" || normalized === "host.docker.internal" || normalized === "gateway.docker.internal";
 }
 
 export function isApiAuthRequired(config: Pick<OcxConfig, "hostname">): boolean {

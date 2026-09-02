@@ -482,11 +482,13 @@ describe("server local API auth", () => {
   test("loopback hostnames do not require opencodex API auth", () => {
     expect(isLoopbackHostname(undefined)).toBe(true);
     expect(isLoopbackHostname("")).toBe(true);
-    expect(isLoopbackHostname("localhost")).toBe(true);
-    expect(isLoopbackHostname("127.0.0.1")).toBe(true);
-    expect(isLoopbackHostname("::1")).toBe(true);
-    expect(isApiAuthRequired(config())).toBe(false);
-    expect(isApiAuthRequired(config("127.0.0.1"))).toBe(false);
+   expect(isLoopbackHostname("localhost")).toBe(true);
+   expect(isLoopbackHostname("127.0.0.1")).toBe(true);
+   expect(isLoopbackHostname("::1")).toBe(true);
+   expect(isLoopbackHostname("host.docker.internal")).toBe(true);
+   expect(isLoopbackHostname("gateway.docker.internal")).toBe(true);
+   expect(isApiAuthRequired(config())).toBe(false);
+   expect(isApiAuthRequired(config("127.0.0.1"))).toBe(false);
   });
 
   test("non-loopback binding requires env token before startup", () => {

@@ -175,7 +175,9 @@ export function isLoopbackHostname(hostname: string | undefined): boolean {
     normalized === "localhost" ||
     normalized === "127.0.0.1" ||
     normalized === "::1" ||
-    normalized === "[::1]"
+    normalized === "[::1]" ||
+    normalized === "host.docker.internal" ||
+    normalized === "gateway.docker.internal"
   );
 }
 
