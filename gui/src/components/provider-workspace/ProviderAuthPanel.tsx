@@ -608,7 +608,7 @@ export default function ProviderAuthPanel({
                         <span className={oauthHealthBadgeClass(healthStatus)}>{healthLabel}</span>
                       )}
                       {showReauth && !healthLabel && <span className="badge badge-amber">{t("pws.reauth")}</span>}
-                      {account.active && <span className="badge badge-primary">{t("prov.accountActive")}</span>}
+                      {account.active && <span className="badge pwi-account-active-badge">{t("prov.accountActive")}</span>}
                       {switching && <span className="badge badge-muted">{t("pws.accountSwitching")}</span>}
                     </button>
                     <button
@@ -768,7 +768,7 @@ export default function ProviderAuthPanel({
                         <span className="pwi-auth-row-label">{entry.label ?? entry.masked}</span>
                         {entry.label && <code className="pwi-auth-row-secondary">{entry.masked} · {t("prov.accountId")}: {entry.id}</code>}
                       </span>
-                      {entry.active && <span className="badge badge-primary">{t("prov.accountActive")}</span>}
+                      {entry.active && <span className="badge pwi-account-active-badge">{t("prov.accountActive")}</span>}
                     </button>
                     <button type="button" className="btn btn-ghost btn-sm"
                       onClick={() => void authHandlers.onEditAlias(item.name, "api-key", entry.id, entry.label)}>
