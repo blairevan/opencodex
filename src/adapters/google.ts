@@ -165,6 +165,12 @@ function messagesToGeminiFormat(
   const systemInstruction = { parts: [{ text: systemText }] };
 
   const contents: unknown[] = [];
+  // Antigravity maps Gemini functionResponse.id to Anthropic tool_result.tool_use_id. Anthropic
+  // requires exactly one result per tool_use id, so repair duplicated replay/history results at
+  // the provider boundary. Track the normalized WIRE id (not the raw client id), because that is
+  // the identity the upstream validator actually sees. Id-less Gemini results stay untracked: they
+  // cannot collide by tool_use_id and must not accidentally suppress one another.
+  const seenToolResultWireIds = new Set<string>();
 
   for (const msg of parsed.context.messages) {
     switch (msg.role) {
@@ -225,11 +231,19 @@ function messagesToGeminiFormat(
         break;
       }
       case "toolResult": {
+        // Claude-on-Antigravity maps this id to `tool_result.tool_use_id`, which must have exactly
+        // one result. Keep the first history result for each actual wire id, matching the Anthropic
+        // adapter's deterministic first-wins repair. Do not dedupe id-less results: Gemini permits
+        // an omitted id, and treating all empty ids as one bucket would silently discard valid data.
+        const responseId = geminiToolCallId(msg.toolCallId);
+        if (responseId !== undefined) {
+          if (seenToolResultWireIds.has(responseId)) break;
+          seenToolResultWireIds.add(responseId);
+        }
         // The functionResponse part carries the textual result. Gemini cannot embed images inside a
         // functionResponse, but it does accept sibling inline_data parts in the same user turn, so
         // tool-result screenshots (e.g. Computer Use) ride along as inline_data instead of being
         // flattened to a "[image]" marker the model can't actually see.
-        const responseId = geminiToolCallId(msg.toolCallId);
         const functionResponse: Record<string, unknown> = { name: namespacedToolName(msg.toolNamespace, msg.toolName), response: { result: geminiToolResultText(msg.content) } };
         // Mirror the matching functionCall id so Claude-on-Antigravity can pair this result with its
         // `tool_use` block (-> Anthropic `tool_result.tool_use_id`).

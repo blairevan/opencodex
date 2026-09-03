@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createGoogleAdapter } from "../src/adapters/google";
+import { parseRequest } from "../src/responses/parser";
 import type { OcxParsedRequest } from "../src/types";
 
 const provider = { adapter: "google", baseUrl: "https://generativelanguage.googleapis.com", apiKey: "key" };
@@ -59,6 +60,85 @@ describe("google adapter — tool result images", () => {
     const toolTurn = contents.find(c => c.parts.some(p => "functionResponse" in p));
     expect(toolTurn!.parts).toEqual([
       { functionResponse: { name: "bash", response: { result: "ok" }, id: "call_1" } },
+    ]);
+  });
+
+  test("emits only the first result when history repeats a tool-call id", async () => {
+    const contents = await geminiContents(parsedWith([
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call_duplicate", name: "bash", arguments: {} }],
+      },
+      { role: "toolResult", toolCallId: "call_duplicate", toolName: "bash", content: "first result", isError: false },
+      { role: "toolResult", toolCallId: "call_duplicate", toolName: "bash", content: "duplicate result", isError: false },
+    ]));
+
+    const responses = contents.flatMap(turn => turn.parts)
+      .filter((part): part is { functionResponse: { id?: string; response: { result: string } } } => "functionResponse" in part)
+      .map(part => part.functionResponse);
+
+    expect(responses).toEqual([
+      { name: "bash", response: { result: "first result" }, id: "call_duplicate" },
+    ]);
+  });
+
+  test("duplicate repair does not discard distinct parallel tool results", async () => {
+    const contents = await geminiContents(parsedWith([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "call_a", name: "bash", arguments: { command: "a" } },
+          { type: "toolCall", id: "call_b", name: "bash", arguments: { command: "b" } },
+        ],
+      },
+      { role: "toolResult", toolCallId: "call_a", toolName: "bash", content: "A", isError: false },
+      { role: "toolResult", toolCallId: "call_a", toolName: "bash", content: "A duplicate", isError: false },
+      { role: "toolResult", toolCallId: "call_b", toolName: "bash", content: "B", isError: false },
+    ]));
+
+    const responses = contents.flatMap(turn => turn.parts)
+      .filter((part): part is { functionResponse: { id?: string; response: { result: string } } } => "functionResponse" in part)
+      .map(part => part.functionResponse);
+
+    expect(responses).toEqual([
+      { name: "bash", response: { result: "A" }, id: "call_a" },
+      { name: "bash", response: { result: "B" }, id: "call_b" },
+    ]);
+  });
+
+  test("id-less tool results are not collapsed into one duplicate bucket", async () => {
+    const contents = await geminiContents(parsedWith([
+      { role: "toolResult", toolCallId: "", toolName: "first", content: "one", isError: false },
+      { role: "toolResult", toolCallId: "", toolName: "second", content: "two", isError: false },
+    ]));
+
+    const responses = contents.flatMap(turn => turn.parts)
+      .filter((part): part is { functionResponse: { id?: string; name: string; response: { result: string } } } => "functionResponse" in part)
+      .map(part => part.functionResponse);
+
+    expect(responses).toEqual([
+      { name: "first", response: { result: "one" } },
+      { name: "second", response: { result: "two" } },
+    ]);
+  });
+
+  test("Responses history with duplicate outputs is repaired before Antigravity wire serialization", async () => {
+    const parsed = parseRequest({
+      model: "gemini-3-pro",
+      input: [
+        { type: "function_call", call_id: "call_d3aec38a", name: "exec", arguments: "{}" },
+        { type: "function_call_output", call_id: "call_d3aec38a", output: "first" },
+        { type: "function_call_output", call_id: "call_d3aec38a", output: "duplicate" },
+      ],
+    });
+
+    const contents = await geminiContents(parsed);
+    const responses = contents.flatMap(turn => turn.parts)
+      .filter((part): part is { functionResponse: { id?: string; response: { result: string } } } => "functionResponse" in part)
+      .map(part => part.functionResponse);
+
+    expect(responses).toEqual([
+      { name: "exec", response: { result: "first" }, id: "call_d3aec38a" },
     ]);
   });
 
