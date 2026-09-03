@@ -34,16 +34,57 @@ describe("non-OpenAI tool catalog nudge", () => {
     expect(note).toContain("`Read`, `Grep`, `Glob`, `Bash`, `LS`");
   });
 
-  test("never forbids apply_patch through the tool-object entry point either", () => {
+  test("marks exec-described helpers as nested instead of top-level", () => {
     const tools: OcxTool[] = [
       {
         name: "exec",
-        description: "Run JavaScript. declare const tools: { apply_patch(input: string): Promise<unknown>; };",
+        description: "Run JavaScript. declare const tools: { apply_patch(input: string): Promise<unknown>; view_image(args: { path: string }): Promise<unknown>; };",
         parameters: {},
       },
+      { name: "wait", description: "Wait", parameters: {} },
     ];
 
-    expect(buildNonOpenAIToolCatalogNudgeForTools(tools)).not.toContain("apply_patch");
+    const note = buildNonOpenAIToolCatalogNudgeForTools(tools);
+
+    expect(note).toContain("Code-mode tool scope");
+    expect(note).toContain("`apply_patch`, `view_image`");
+    expect(note).toContain("await tools.<name>(...)");
+    expect(note).toContain("never emit a nested helper as a top-level tool call");
+  });
+
+  test("does not classify a helper as nested-only when the same tool is top-level", () => {
+    const tools: OcxTool[] = [
+      {
+        name: "exec",
+        description: "Run JavaScript. declare const tools: { view_image(args: { path: string }): Promise<unknown>; };",
+        parameters: {},
+      },
+      { name: "view_image", description: "View image directly", parameters: {} },
+    ];
+
+    const note = buildNonOpenAIToolCatalogNudgeForTools(tools);
+
+    expect(note).toContain("Valid tool names for this turn are exactly `exec`, `view_image`");
+    expect(note).not.toContain("not exposed as top-level tools are `view_image`");
+  });
+
+  test("does not inject code-mode scope when tool_choice hides exec", () => {
+    const tools: OcxTool[] = [
+      {
+        name: "exec",
+        description: "Run JavaScript. declare const tools: { view_image(args: { path: string }): Promise<unknown>; };",
+        parameters: {},
+      },
+      { name: "read_file", namespace: "mcp__fs", description: "Read", parameters: {} },
+    ];
+
+    const note = buildNonOpenAIToolCatalogNudgeForTools(
+      tools,
+      { mode: "required", allowedTools: ["mcp__fs__read_file"] },
+    );
+
+    expect(note).not.toContain("Code-mode tool scope");
+    expect(note).not.toContain("view_image");
   });
 
   // `advertised` holds WIRE names. A provider that rewrites them (Claude OAuth `custom_`,

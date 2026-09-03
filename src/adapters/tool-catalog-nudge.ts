@@ -25,6 +25,30 @@ function uniqueNames(names: readonly string[]): string[] {
   return [...new Set(names.filter(name => name.trim().length > 0))];
 }
 
+/**
+ * Extract helpers documented inside Codex Desktop's unified `exec` tool. These names live in the
+ * JavaScript sandbox (`tools.<name>(...)`), not automatically in the request's top-level tool
+ * catalog. Keep this best-effort and description-driven so new Codex helpers gain the scope guard
+ * without a proxy release and a helper that becomes top-level is not accidentally forbidden.
+ */
+function execNestedHelperNames(description: string | undefined): string[] {
+  if (!description) return [];
+  const names: string[] = [];
+
+  for (const match of description.matchAll(/\btools\.([A-Za-z_$][\w$]*)\s*\(/g)) {
+    if (match[1]) names.push(match[1]);
+  }
+
+  for (const block of description.matchAll(/declare\s+const\s+tools\s*:\s*\{([\s\S]*?)\};/gi)) {
+    const body = block[1] ?? "";
+    for (const match of body.matchAll(/(?:^|[;\n])\s*([A-Za-z_$][\w$]*)\s*(?:<[^;\n{]*>)?\s*\(/g)) {
+      if (match[1]) names.push(match[1]);
+    }
+  }
+
+  return uniqueNames(names);
+}
+
 function isOpenAIOrChatGPTHost(hostname: string): boolean {
   return hostname === "openai.com"
     || hostname.endsWith(".openai.com")
@@ -69,16 +93,29 @@ export function buildNonOpenAIToolCatalogNudgeFromNames(
 }
 
 export function buildNonOpenAIToolCatalogNudgeForTools(
-  tools: readonly Pick<OcxTool, "namespace" | "name">[] | undefined,
+  tools: readonly Pick<OcxTool, "namespace" | "name" | "description">[] | undefined,
   toolChoice?: OcxRequestOptions["toolChoice"],
   toWireName: (tool: Pick<OcxTool, "namespace" | "name">) => string = tool => namespacedToolName(tool.namespace, tool.name),
 ): string | undefined {
-  const visibleNames = tools
-    ?.filter(toolChoiceToolPredicate(toolChoice))
-    .map(toWireName);
+  const visibleTools = tools?.filter(toolChoiceToolPredicate(toolChoice)) ?? [];
+  const visibleNames = visibleTools.map(toWireName);
   // Neighbor names are bare and un-namespaced, so probe the same transform with a bare tool.
-  return buildNonOpenAIToolCatalogNudgeFromNames(
+  const base = buildNonOpenAIToolCatalogNudgeFromNames(
     visibleNames,
     name => toWireName({ name }),
   );
+  if (!base) return undefined;
+
+  const execTool = visibleTools.find(tool => !tool.namespace && tool.name === "exec");
+  if (!execTool) return base;
+
+  const advertised = new Set(visibleNames);
+  const nestedOnly = execNestedHelperNames(execTool.description).filter(
+    name => !advertised.has(name) && !advertised.has(toWireName({ name })),
+  );
+  const nestedScope = nestedOnly.length > 0
+    ? ` Nested helpers documented inside \`exec\` and not exposed as top-level tools are ${quoteNames(nestedOnly)}.`
+    : "";
+
+  return `${base} Code-mode tool scope: helpers documented inside the \`exec\` tool belong to its JavaScript sandbox unless that exact helper is also listed in this turn's top-level catalog.${nestedScope} Invoke nested helpers only from JavaScript passed to \`exec\`, using \`await tools.<name>(...)\`; never emit a nested helper as a top-level tool call.`;
 }
