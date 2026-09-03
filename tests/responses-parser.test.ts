@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseRequest } from "../src/responses/parser";
 import { buildToolBridgeMaps } from "../src/server/responses";
+import type { OcxToolCall } from "../src/types";
 
 describe("Responses parser", () => {
   test("normalizes function tool schemas to an object root without corrupting valid schemas (#745)", () => {
@@ -308,6 +309,22 @@ describe("codex-rs compat surface (260707)", () => {
     expect((result?.content as { detail?: string }[])[0].detail).toBe("high");
   });
 
+  test("custom_tool_call preserves provider metadata through request-schema parsing", () => {
+    const signature = "sig-custom-tool-history-roundtrip";
+    const parsed = parseRequest({ ...base, input: [
+      {
+        type: "custom_tool_call",
+        call_id: "c_sig",
+        name: "exec",
+        input: "{\"cmd\":\"pwd\"}",
+        extra_content: { google: { thought_signature: signature } },
+      },
+    ]});
+    const assistant = parsed.context.messages.find(m => m.role === "assistant");
+    const call = (assistant?.content as OcxToolCall[] | undefined)?.find(part => part.type === "toolCall");
+    expect(call?.providerMetadata?.google?.thoughtSignature).toBe(signature);
+  });
+
   test("custom_tool_call_output array output is normalized, not leaked raw", () => {
     const parsed = parseRequest({ ...base, input: [
       { type: "custom_tool_call", call_id: "c2", name: "apply_patch", input: "body" },
@@ -384,6 +401,22 @@ describe("codex-rs compat surface (260707)", () => {
     expect(serialized).not.toContain("[web search performed");
     expect(serialized).not.toContain("bun 1.3 release");
     expect(parsed.context.messages.map(m => m.role)).toEqual(["user"]);
+  });
+
+  test("tool_search_call preserves provider-opaque metadata across history replay", () => {
+    const signature = "sig-tool-search-history";
+    const parsed = parseRequest({ ...base, input: [
+      {
+        type: "tool_search_call",
+        call_id: "ts-meta",
+        arguments: { query: "x" },
+        extra_content: { google: { thought_signature: signature } },
+      },
+    ]});
+    const assistant = parsed.context.messages.find(m => m.role === "assistant");
+    const call = (assistant?.content as OcxToolCall[] | undefined)?.find(part => part.type === "toolCall");
+    expect(call?.type).toBe("toolCall");
+    expect(call?.providerMetadata?.google?.thoughtSignature).toBe(signature);
   });
 
   test("tool_search_output failed status is surfaced as an error result", () => {

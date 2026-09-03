@@ -611,12 +611,14 @@ export function bridgeToResponsesSSE(
               type: "tool_search_call", id: currentToolCall.itemId,
               call_id: currentToolCall.callId, execution: "client",
               arguments: parseArgsObj(currentToolCall.args), status: "completed",
+              ...(responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata) ?? {}),
             }
           : currentToolCall.freeform
           ? {
               type: "custom_tool_call", id: currentToolCall.itemId,
               call_id: currentToolCall.callId, name: currentToolCall.name,
               input: freeformInput(currentToolCall.args), status: "completed",
+              ...(responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata) ?? {}),
             }
           : {
               type: "function_call", id: currentToolCall.itemId,
@@ -648,12 +650,14 @@ export function bridgeToResponsesSSE(
               type: "tool_search_call", id: currentToolCall.itemId,
               call_id: currentToolCall.callId, execution: "client",
               arguments: parseArgsObj(currentToolCall.args), status: "incomplete",
+              ...(responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata) ?? {}),
             }
           : currentToolCall.freeform
           ? {
               type: "custom_tool_call", id: currentToolCall.itemId,
               call_id: currentToolCall.callId, name: currentToolCall.name,
               input: freeformInput(currentToolCall.args), status: "incomplete",
+              ...(responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata) ?? {}),
             }
           : {
               type: "function_call", id: currentToolCall.itemId,
@@ -1581,12 +1585,14 @@ function buildResponseJSONWithBudget(
         type: "tool_search_call", id: `tsc_${uuid()}`,
         call_id: currentToolCallId, execution: "client",
         arguments: parseArgsObj(coercedArgs), status,
+        ...(responsesExtraContentFromProviderMetadata(currentToolCallProviderMetadata) ?? {}),
       });
     } else if (freeform) {
       pushOutput({
         type: "custom_tool_call", id: `ctc_${uuid()}`,
         call_id: currentToolCallId, name: realName,
         input: freeformInput(currentToolCallArgs), status,
+        ...(responsesExtraContentFromProviderMetadata(currentToolCallProviderMetadata) ?? {}),
       });
     } else {
       pushOutput({

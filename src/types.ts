@@ -1001,6 +1001,13 @@ export interface OcxConfig {
 
 export type OcxAccountPoolRotationStrategy = "quota" | "round-robin" | "fill-first";
 
+export interface AntigravityAccountPoolConfig {
+  enabled?: boolean;
+  autoSwitchThreshold?: number;
+  strategy?: OcxAccountPoolRotationStrategy;
+  stickyLimit?: number;
+}
+
 export type OcxComboStrategy = "failover" | "round-robin";
 export type OcxComboDefaultEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 

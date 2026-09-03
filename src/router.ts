@@ -603,7 +603,10 @@ function routeModelInternal(
   //    slash-containing model ids (e.g. "anthropic/claude-...") fall through when
   //    no such provider exists.
   if (slash > 0) {
-    const provName = modelId.slice(0, slash);
+    let provName = modelId.slice(0, slash);
+    if ((provName === "agy" || provName === "antigravity") && !hasOwnProvider(config.providers, provName) && hasOwnProvider(config.providers, "google-antigravity")) {
+      provName = "google-antigravity";
+    }
     if (provName === LEGACY_CHATGPT_PROVIDER_ID || provName === LEGACY_OPENAI_MULTI_PROVIDER_ID) {
       throw new Error(`No provider configured for model: ${modelId}`);
     }

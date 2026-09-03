@@ -82,12 +82,26 @@ const customToolCallItemSchema = z.object({
   call_id: z.string().min(1),
   name: z.string().min(1),
   input: z.string(),
+  extra_content: z.object({
+    google: z.object({ thought_signature: z.string().optional() }).optional(),
+  }).optional(),
 });
 const customToolCallOutputItemSchema = z.object({
   type: z.literal("custom_tool_call_output"),
   call_id: z.string().min(1),
   // codex-rs CustomToolCallOutput carries FunctionCallOutputPayload: string OR content items.
   output: toolOutputSchema,
+});
+const toolSearchCallItemSchema = z.object({
+  type: z.literal("tool_search_call"),
+  id: z.string().optional(),
+  call_id: z.string().min(1),
+  arguments: z.record(z.string(), z.unknown()).optional(),
+  status: z.string().optional(),
+  execution: z.string().optional(),
+  extra_content: z.object({
+    google: z.object({ thought_signature: z.string().optional() }).optional(),
+  }).optional(),
 });
 
 export const inputItemSchema = z.union([
@@ -99,6 +113,7 @@ export const inputItemSchema = z.union([
   functionCallOutputItemSchema,
   customToolCallItemSchema,
   customToolCallOutputItemSchema,
+  toolSearchCallItemSchema,
   z.object({ type: z.string() }).loose(),
 ]);
 

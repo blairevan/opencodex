@@ -530,7 +530,7 @@ export function parseRequest(body: unknown): OcxParsedRequest {
       }
 
       if (effectiveType === "custom_tool_call") {
-        const call = item as { id?: string; call_id: string; name: string; input: string };
+        const call = item as { id?: string; call_id: string; name: string; input: string; extra_content?: unknown };
         const toolCall: OcxToolCall = {
           type: "toolCall", id: call.call_id, name: call.name,
           arguments: { input: call.input ?? "" },
@@ -568,12 +568,15 @@ export function parseRequest(body: unknown): OcxParsedRequest {
       if (effectiveType === "tool_search_call") {
         // Preserve the model's prior tool_search call as an assistant tool call so multi-turn
         // history stays complete (otherwise the model re-issues tool_search forever).
-        const call = item as { id?: string; call_id?: string; arguments?: unknown };
+        const call = item as { id?: string; call_id?: string; arguments?: unknown; extra_content?: unknown };
         const callId = call.call_id ?? call.id ?? "";
-        assistantHolderWithReasoning().content.push({
+        const toolCall: OcxToolCall = {
           type: "toolCall", id: callId, name: "tool_search",
           arguments: isObj(call.arguments) ? call.arguments : {},
-        });
+        };
+        const providerMetadata = providerMetadataFromResponsesFunctionCall(call);
+        if (providerMetadata) toolCall.providerMetadata = providerMetadata;
+        assistantHolderWithReasoning().content.push(toolCall);
         continue;
       }
 

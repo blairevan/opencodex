@@ -615,11 +615,13 @@ describe("Responses bridge reasoning and usage parity", () => {
   test("non-streaming custom_tool_call and tool_search_call types", () => {
     const freeform = new Set(["apply_patch"]);
     const toolSearch = new Set(["tool_search"]);
+    const customSig = "sig-custom-tool";
+    const searchSig = "sig-tool-search";
     const json = buildResponseJSON([
-      { type: "tool_call_start", id: "c1", name: "apply_patch" },
+      { type: "tool_call_start", id: "c1", name: "apply_patch", providerMetadata: { google: { thoughtSignature: customSig } } },
       { type: "tool_call_delta", arguments: "{\"input\":\"patch data\"}" },
       { type: "tool_call_end" },
-      { type: "tool_call_start", id: "c2", name: "tool_search" },
+      { type: "tool_call_start", id: "c2", name: "tool_search", providerMetadata: { google: { thoughtSignature: searchSig } } },
       { type: "tool_call_delta", arguments: "{\"query\":\"find\"}" },
       { type: "tool_call_end" },
       { type: "done" },
@@ -629,13 +631,16 @@ describe("Responses bridge reasoning and usage parity", () => {
     expect(output[0].type).toBe("custom_tool_call");
     expect(output[0].id).toStartWith("ctc_");
     expect(output[0].input).toBe("patch data");
+    expect(output[0].extra_content).toEqual({ google: { thought_signature: customSig } });
     expect(output[1].type).toBe("tool_search_call");
     expect(output[1].id).toStartWith("tsc_");
+    expect(output[1].extra_content).toEqual({ google: { thought_signature: searchSig } });
   });
 
   test("streaming freeform tool call emits unwrapped custom_tool_call_input deltas", async () => {
+    const signature = "sig-streaming-custom-tool";
     const frames = await collectSse(bridgeToResponsesSSE(replay([
-      { type: "tool_call_start", id: "c1", name: "apply_patch" },
+      { type: "tool_call_start", id: "c1", name: "apply_patch", providerMetadata: { google: { thoughtSignature: signature } } },
       // JSON wrapper split across chunks, incl. an escape split at a boundary.
       { type: "tool_call_delta", arguments: "{\"inp" },
       { type: "tool_call_delta", arguments: "ut\":\"line1\\" },
@@ -655,7 +660,12 @@ describe("Responses bridge reasoning and usage parity", () => {
     expect(doneEvt).toMatchObject({ input: "line1\nline2" });
 
     const item = frames.find(f => f.event === "response.output_item.done")?.data.item as Record<string, unknown>;
-    expect(item).toMatchObject({ type: "custom_tool_call", input: "line1\nline2", status: "completed" });
+    expect(item).toMatchObject({
+      type: "custom_tool_call",
+      input: "line1\nline2",
+      status: "completed",
+      extra_content: { google: { thought_signature: signature } },
+    });
     const completed = frames.find(f => f.event === "response.completed")?.data.response as Record<string, unknown>;
     const completedItem = (completed.output as Record<string, unknown>[])[0];
     expect(added.id).toStartWith("ctc_");

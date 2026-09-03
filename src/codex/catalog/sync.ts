@@ -254,6 +254,9 @@ function routedDisplayName(slug: string): string {
     if (m && model.startsWith(`${m[1]}-${m[1]}-`)) model = model.slice(m[1]!.length + 1);
     return `${provider === "command-code" ? "commandcode-auth" : "commandcode-api"}/${model}`;
   }
+  if (provider === "google-antigravity") {
+    return `agy/${model}`;
+  }
   return slug;
 }
 
