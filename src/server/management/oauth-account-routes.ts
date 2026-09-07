@@ -267,9 +267,10 @@ export async function handleOauthAccountRoutes(ctx: ManagementContext): Promise<
     const wantQuota = url.searchParams.get("quota") === "1" && supportsPerAccountQuota(provider);
     if (!wantQuota) return jsonResponse(projectAccounts());
     const forceRefresh = url.searchParams.get("refresh") === "1";
+    const targetAccountId = url.searchParams.get("accountId")?.trim() || undefined;
     // Probing may refresh the active credential and mark needsReauth — project health
     // from the post-probe store so the response is not stale.
-    const rows = await fetchProviderAccountQuotas(provider, forceRefresh);
+    const rows = await fetchProviderAccountQuotas(provider, forceRefresh, targetAccountId);
     const byId = new Map(rows.map(row => [row.accountId, row]));
     const projected = projectAccounts();
     return jsonResponse({

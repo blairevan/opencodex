@@ -131,6 +131,63 @@ export function useProviderAccountPools(deps: {
     setKeyPools(Object.fromEntries(entries));
   }, [apiBase]);
 
+  const refreshAccountQuotas = useCallback(async (provider: string, accountId?: string): Promise<boolean> => {
+    try {
+      const url = `${apiBase}/api/oauth/accounts?provider=${encodeURIComponent(provider)}&quota=1&refresh=1${accountId ? `&accountId=${encodeURIComponent(accountId)}` : ""}`;
+      const res = await fetch(url);
+      if (!res.ok) return false;
+      const data = await res.json() as { activeAccountId?: string | null; accounts?: OAuthAccount[] };
+      if (!aliveRef.current || !data || !Array.isArray(data.accounts)) return false;
+
+      // If a specific account was targeted, verify it did not fail with unavailable
+      if (accountId) {
+        const targetRow = data.accounts.find(a => a.id === accountId);
+        if (targetRow?.quotaUnavailable && !targetRow.quota) {
+          return false;
+        }
+      } else if (data.accounts.length > 0 && data.accounts.every(a => a.quotaUnavailable && !a.quota)) {
+        return false;
+      }
+
+      setAccountSets(current => {
+        const existing = current[provider];
+        if (!existing) {
+          return {
+            ...current,
+            [provider]: {
+              activeAccountId: data.activeAccountId ?? null,
+              accounts: data.accounts ?? [],
+            },
+          };
+        }
+        const freshMap = new Map((data.accounts ?? []).map(a => [a.id, a]));
+        const updatedAccounts = existing.accounts.map(acc => {
+          const fresh = freshMap.get(acc.id);
+          if (!fresh) return acc;
+          const keepQuota = Boolean(accountId && acc.id !== accountId && fresh.quota == null && acc.quota != null);
+          return {
+            ...acc,
+            ...fresh,
+            quota: keepQuota ? acc.quota : fresh.quota,
+            quotaUnavailable: keepQuota ? acc.quotaUnavailable : fresh.quotaUnavailable,
+            alias: fresh.alias !== undefined ? fresh.alias : acc.alias,
+          };
+        });
+        return {
+          ...current,
+          [provider]: {
+            ...existing,
+            activeAccountId: data.activeAccountId ?? existing.activeAccountId,
+            accounts: updatedAccounts,
+          },
+        };
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [aliveRef, apiBase]);
+
   const switchAccount = async (provider: string, account: OAuthAccount) => {
     if (account.active || account.needsReauth || switchingAccountRef.current) return;
     const target = { provider, accountId: account.id };
@@ -294,7 +351,7 @@ export function useProviderAccountPools(deps: {
   return {
     accountSets, accountLoadStates, switchingAccount, openAccounts, keyPools, addingKeyFor, newKeyValue,
     setAccountSets, setAccountLoadStates, setSwitchingAccount, setOpenAccounts, setKeyPools, setAddingKeyFor, setNewKeyValue,
-    fetchAccountSets, fetchKeyPools, switchAccount, switchApiKey, removeApiKey, addApiKeyValue, addApiKey, editCredentialAlias, removeAccount, setAccountEnabled,
+    fetchAccountSets, fetchKeyPools, refreshAccountQuotas, switchAccount, switchApiKey, removeApiKey, addApiKeyValue, addApiKey, editCredentialAlias, removeAccount, setAccountEnabled,
     oauthCardProviders, keyCardProviders, activeAccountNeedsReauth,
   };
 }

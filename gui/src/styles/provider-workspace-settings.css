@@ -71,7 +71,7 @@
   line-height: 1;
   vertical-align: middle;
 }
-.toggle-with-label--auto { min-width: 78px; }
+.toggle-with-label--auto { min-width: 54px; }
 .toggle-with-label--account { min-width: 54px; }
 .toggle-with-label .toggle-label-text {
   position: relative;
@@ -121,6 +121,23 @@
   border-radius: 10px;
   min-width: 24px;
   text-align: center;
+}
+.pwi-auto-refresh-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--text-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pwi-auto-refresh-checkbox-label:hover {
+  color: var(--text);
+}
+.pwi-auto-refresh-checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  margin: 0;
 }
 .pwi-auth-refresh-btn {
   display: inline-flex;

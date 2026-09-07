@@ -228,7 +228,7 @@ export default function ProviderAuthPanel({
   const [refreshInterval, setRefreshInterval] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem("ocx_antigravity_refresh_interval"));
-      return [10, 30, 60, 180].includes(saved) ? saved : 60;
+      return [10, 30, 60, 180, 300, 600].includes(saved) ? saved : 60;
     } catch {
       return 60;
     }
@@ -237,13 +237,42 @@ export default function ProviderAuthPanel({
   const [reserveQuotaSlots, setReserveQuotaSlots] = useState(false);
   const importFileRef = useRef<HTMLInputElement>(null);
   const deviceCodeCopy = useCopyFeedback<string>();
+  const [refreshAllAccounts, setRefreshAllAccounts] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("ocx_quota_refresh_all_accounts");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
+  });
+  const refreshAllAccountsRef = useRef(refreshAllAccounts);
+  const accountsRef = useRef(accounts);
+  const [prevItemName, setPrevItemName] = useState(item.name);
+  if (prevItemName !== item.name) {
+    setPrevItemName(item.name);
+    setLastManualQuotaRefreshAt(null);
+  }
+
+  useEffect(() => {
+    refreshAllAccountsRef.current = refreshAllAccounts;
+  }, [refreshAllAccounts]);
+
+  useEffect(() => {
+    accountsRef.current = accounts;
+  }, [accounts]);
 
   useEffect(() => {
     try {
       localStorage.setItem("ocx_antigravity_auto_refresh", String(autoRefresh));
       localStorage.setItem("ocx_antigravity_refresh_interval", String(refreshInterval));
-    } catch {}
+    } catch { /* ignore storage failures */ }
   }, [autoRefresh, refreshInterval]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ocx_quota_refresh_all_accounts", String(refreshAllAccounts));
+    } catch { /* ignore storage failures */ }
+  }, [refreshAllAccounts]);
 
   useEffect(() => {
     try {
@@ -255,12 +284,43 @@ export default function ProviderAuthPanel({
     setCountdown(refreshInterval);
   }, [refreshInterval, autoRefresh]);
 
+  const handleRefreshQuota = async () => {
+    if (refreshingQuota || !authHandlers) return;
+    setRefreshingQuota(true);
+    try {
+      let ok = false;
+      const targetAccountId = refreshAllAccountsRef.current
+        ? undefined
+        : accountsRef.current.find(a => a.active)?.id;
+      if (authHandlers.onRefreshAccountQuotas) {
+        ok = await authHandlers.onRefreshAccountQuotas(item.name, targetAccountId);
+      } else if (authHandlers.onRefreshAccounts) {
+        await authHandlers.onRefreshAccounts(item.name);
+        ok = true;
+      } else if (authHandlers.onRetryAccounts) {
+        await authHandlers.onRetryAccounts(item.name);
+        ok = true;
+      }
+      if (ok) {
+        const refreshedAt = Date.now();
+        setLastManualQuotaRefreshAt(refreshedAt);
+      }
+    } finally {
+      setRefreshingQuota(false);
+    }
+  };
+
+  const handleRefreshQuotaRef = useRef(handleRefreshQuota);
+  useEffect(() => {
+    handleRefreshQuotaRef.current = handleRefreshQuota;
+  });
+
   useEffect(() => {
     if (!autoRefresh || accounts.length === 0) return;
     const timer = window.setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
-          void handleRefreshQuota();
+          void handleRefreshQuotaRef.current();
           return refreshInterval;
         }
         return prev - 1;
@@ -334,22 +394,6 @@ export default function ProviderAuthPanel({
   const accountStatusDetails = accountStatusHoverText(t, accountStatusCounts);
   const activeReauthAccount = accounts.find(a => a.active && a.needsReauth);
   const activeNeedsReauth = Boolean(activeReauthAccount);
-
-  const handleRefreshQuota = async () => {
-    if (refreshingQuota || !authHandlers) return;
-    setRefreshingQuota(true);
-    try {
-      if (authHandlers.onRefreshAccounts) {
-        await authHandlers.onRefreshAccounts(item.name);
-      } else if (authHandlers.onRetryAccounts) {
-        await authHandlers.onRetryAccounts(item.name);
-      }
-      const refreshedAt = Date.now();
-      setLastManualQuotaRefreshAt(refreshedAt);
-    } finally {
-      setRefreshingQuota(false);
-    }
-  };
 
   const submitKey = async () => {
     const key = newKey.trim();
@@ -468,12 +512,22 @@ export default function ProviderAuthPanel({
                     <option value={30}>{t("pws.interval30s")}</option>
                     <option value={60}>{t("pws.interval1m")}</option>
                     <option value={180}>{t("pws.interval3m")}</option>
+                    <option value={300}>{t("pws.interval5m")}</option>
+                    <option value={600}>{t("pws.interval10m")}</option>
                   </select>
                   <span className="pwi-countdown-badge mono" title={`${countdown}s`}>
                     {`${countdown}s`}
                   </span>
                 </>
               )}
+              <label className="pwi-auto-refresh-checkbox-label" title={t("pws.refreshAllAccounts")}>
+                <input
+                  type="checkbox"
+                  checked={refreshAllAccounts}
+                  onChange={e => setRefreshAllAccounts(e.target.checked)}
+                />
+                <span>{t("pws.refreshAllAccounts")}</span>
+              </label>
             </div>
             <button
               type="button"

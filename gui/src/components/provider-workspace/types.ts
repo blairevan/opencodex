@@ -82,6 +82,7 @@ export interface ProviderAuthHandlers {
   onSetAccountEnabled: (provider: string, account: OAuthAccountRow, enabled: boolean) => void | Promise<void>;
   onRetryAccounts?: (provider: string) => void | Promise<void>;
   onRefreshAccounts?: (provider: string) => Promise<void>;
+  onRefreshAccountQuotas?: (provider: string, accountId?: string) => Promise<boolean>;
   onAddApiKey: (provider: string, key: string) => Promise<boolean>;
   onSwitchApiKey: (provider: string, entry: ApiKeyRow) => void | Promise<void>;
   onRemoveApiKey: (provider: string, entry: ApiKeyRow) => void | Promise<void>;

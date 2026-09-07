@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Locale, TFn } from "../i18n/shared";
 import { useI18n } from "../i18n/shared";
 import { IconAlert } from "../icons";
@@ -188,6 +188,23 @@ export default function QuotaBars({
 }) {
   const { locale } = useI18n();
   const rows = buildQuotaRows(quota, plan, t);
+  const [now, setNow] = useState(() => Date.now());
+
+  const hasSubHourReset = rows.some(r => {
+    if (typeof r.resetAt !== "number" || !Number.isFinite(r.resetAt)) return false;
+    const ms = r.resetAt < 10_000_000_000 ? r.resetAt * 1000 : r.resetAt;
+    const diff = ms - now;
+    return diff > 0 && diff < 3600_000;
+  });
+
+  useEffect(() => {
+    if (!hasSubHourReset) return;
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [hasSubHourReset]);
+
   if (rows.length === 0) {
     if (!pending) return null;
     if (layout === "stacked" || layout === "inline") {
@@ -234,7 +251,7 @@ export default function QuotaBars({
       <div className={`quota-stacked${className ? ` ${className}` : ""}`}>
         {rows.map(row => (
           layout === "inline" ? (
-            <InlineQuotaRow key={row.limitLabel} row={row} threshold={threshold} t={t} locale={locale} />
+            <InlineQuotaRow key={row.limitLabel} row={row} threshold={threshold} t={t} locale={locale} now={now} />
           ) : (
             <StackedQuotaRow
               key={row.limitLabel}
@@ -242,6 +259,7 @@ export default function QuotaBars({
               threshold={threshold}
               t={t}
               locale={locale}
+              now={now}
               incomplete={row.windowKey
                 ? incompleteWindowKeys?.has(row.windowKey) === true
                 : row.customLabel !== undefined && incompleteCustomWindowLabels?.has(row.customLabel) === true}
@@ -304,16 +322,17 @@ function QuotaRow({ label, percent, resetAt, threshold, t, locale }: {
   );
 }
 
-function InlineQuotaRow({ row, threshold, t, locale }: {
+function InlineQuotaRow({ row, threshold, t, locale, now }: {
   row: QuotaBarRow;
   threshold: number;
   t: TFn;
   locale: Locale;
+  now?: number;
 }) {
   const exhausted = isQuotaExhausted(row.percent);
   const warn = isQuotaWarn(row.percent, threshold);
   const color = quotaBarTone(row.percent, threshold);
-  const resetText = formatResetFuture(row.resetAt, t, locale);
+  const resetText = formatResetFuture(row.resetAt, t, locale, now);
   return (
     <div className={`quota-inline-row${warn ? " quota-inline-row--warn" : ""}${exhausted ? " quota-inline-row--exhausted" : ""}`}>
       <span className="quota-inline-label">{row.limitLabel}</span>
@@ -334,17 +353,18 @@ function InlineQuotaRow({ row, threshold, t, locale }: {
   );
 }
 
-function StackedQuotaRow({ row, threshold, t, locale, incomplete }: {
+function StackedQuotaRow({ row, threshold, t, locale, incomplete, now }: {
   row: QuotaBarRow;
   threshold: number;
   t: TFn;
   locale: Locale;
   incomplete: boolean;
+  now?: number;
 }) {
   const exhausted = isQuotaExhausted(row.percent);
   const warn = isQuotaWarn(row.percent, threshold);
   const color = quotaBarTone(row.percent, threshold);
-  const resetText = formatResetFuture(row.resetAt, t, locale);
+  const resetText = formatResetFuture(row.resetAt, t, locale, now);
   return (
     <div className={`quota-stacked-row${warn ? " quota-stacked-row--warn" : ""}${exhausted ? " quota-stacked-row--exhausted" : ""}`}>
       <div className="quota-stacked-head">
@@ -428,9 +448,17 @@ export function formatResetFuture(
     return t("quota.resetsAt", { date: dateStr, time, when: `${dateStr}, ${time}` });
   }
 
-  const minutes = Math.round((ms - now) / 60_000);
-  if (minutes < 60) return t("quota.resetsRelativeMinutes", { n: Math.max(1, minutes), time });
-  const hours = Math.round(minutes / 60);
+  const diffSec = Math.max(0, Math.floor((ms - now) / 1000));
+  if (diffSec < 3600) {
+    const m = Math.floor(diffSec / 60);
+    const s = diffSec % 60;
+    if (m > 0) {
+      return t("quota.resetsRelativeMinutesSeconds", { m, s, time });
+    }
+    return t("quota.resetsRelativeSeconds", { s, time });
+  }
+
+  const hours = Math.round(diffSec / 3600);
   if (hours < 12 && dayDiff === 0) return t("quota.resetsRelativeHours", { n: Math.max(1, hours), time });
   if (dayDiff === 0) return t("quota.resetsToday", { time });
 

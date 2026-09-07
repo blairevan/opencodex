@@ -1492,11 +1492,21 @@ async function fetchAccountQuota(
 export async function fetchProviderAccountQuotas(
   provider: string,
   forceRefresh = false,
+  targetAccountId?: string,
 ): Promise<ProviderAccountQuota[]> {
   if (!supportsPerAccountQuota(provider)) return [];
   const set = getAccountSet(provider);
   if (!set) return [];
   return await Promise.all(set.accounts.map(async account => {
+    if (targetAccountId && account.id !== targetAccountId) {
+      const key = accountCacheKey(provider, account.id);
+      const entry = accountQuotaCache.get(key);
+      return {
+        accountId: account.id,
+        quota: entry?.quota ?? null,
+        ...(entry?.unavailable ? { unavailable: true as const } : {}),
+      };
+    }
     const entry = await fetchAccountQuota(provider, account.id, forceRefresh);
     return {
       accountId: account.id,

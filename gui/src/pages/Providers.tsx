@@ -178,7 +178,7 @@ export default function Providers({ apiBase }: { apiBase: string }) {
     fetchConfig, fetchOauth, fetchProviderQuotas, codexActiveNeedsReauth,
   });
   const {
-    accountSets, setAccountSets, accountLoadStates, switchingAccount, keyPools, fetchAccountSets,
+    accountSets, setAccountSets, accountLoadStates, switchingAccount, keyPools, fetchAccountSets, refreshAccountQuotas,
     switchAccount, switchApiKey, removeApiKey, addApiKeyValue, editCredentialAlias,
     removeAccount, setAccountEnabled, activeAccountNeedsReauth,
   } = pools;
@@ -372,6 +372,7 @@ export default function Providers({ apiBase }: { apiBase: string }) {
               onSetAccountEnabled: setAccountEnabled,
               onRetryAccounts: async provider => { await fetchAccountSets([provider]); },
               onRefreshAccounts: async provider => { await fetchAccountSets([provider], true); await fetchProviderQuotas(true); },
+              onRefreshAccountQuotas: refreshAccountQuotas,
               onAddApiKey: addApiKeyValue,
               onSwitchApiKey: switchApiKey,
               onRemoveApiKey: removeApiKey,

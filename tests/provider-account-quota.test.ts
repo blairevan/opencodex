@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { saveCredential } from "../src/oauth/store";
+import { getAccountSet, saveCredential } from "../src/oauth/store";
 import type { OcxConfig } from "../src/types";
 import {
   clearAccountQuotaCache,
@@ -94,6 +94,11 @@ describe("fetchProviderAccountQuotas", () => {
     // A forced refresh bypasses the TTL.
     await fetchProviderAccountQuotas("anthropic", true);
     expect(calls).toBe(4);
+
+    // A forced refresh with targetAccountId probes only that account.
+    const targetId = getAccountSet("anthropic")!.accounts[0]!.id;
+    await fetchProviderAccountQuotas("anthropic", true, targetId);
+    expect(calls).toBe(5);
   });
 
   test("a failing probe is flagged unavailable without dropping the other account", async () => {

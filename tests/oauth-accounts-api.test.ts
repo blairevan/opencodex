@@ -598,4 +598,32 @@ describe("multiauth accounts API", () => {
       await server.stop(true);
     }
   });
+
+  test("GET with quota=1, refresh=1, and accountId queries target account", async () => {
+    const server = startServer(0);
+    try {
+      let probed = 0;
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const urlStr = String(input);
+        if (urlStr.includes("api.anthropic.com/api/oauth/usage")) {
+          probed += 1;
+          return new Response(JSON.stringify({
+            five_hour: { utilization: 25, resets_at: "2026-07-05T12:00:00Z" },
+            seven_day: { utilization: 10, resets_at: "2026-07-08T12:00:00Z" },
+          }), { status: 200 });
+        }
+        return originalFetch(input, init);
+      }) as typeof fetch;
+
+      const res = await fetch(new URL("/api/oauth/accounts?provider=anthropic&quota=1&refresh=1&accountId=aaaa1111", server.url));
+      expect(res.status).toBe(200);
+      const data = await res.json() as { accounts: Array<{ id: string; quota?: { fiveHourPercent: number } | null }> };
+      expect(data.accounts.length).toBe(2);
+      expect(probed).toBe(1);
+      const target = data.accounts.find(a => a.id === "aaaa1111");
+      expect(target?.quota?.fiveHourPercent).toBe(25);
+    } finally {
+      await server.stop(true);
+    }
+  });
 });
