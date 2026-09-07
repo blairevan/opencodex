@@ -193,7 +193,8 @@ export function applyReasoningLevels(
 }
 
 export function isGpt56NativeSlug(slug: string): boolean {
-  return !slug.includes("/") && nativeOpenAiCapabilitySourceSlug(slug).startsWith("gpt-5.6-");
+  const source = nativeOpenAiCapabilitySourceSlug(slug);
+  return !slug.includes("/") && (source.startsWith("gpt-5.6-") || source.startsWith("gpt-6"));
 }
 
 export function ensureGpt56ReasoningLevels(entry: RawEntry): void {

@@ -560,7 +560,7 @@ export default function ProviderWorkspaceShell({
             modelUsage: usageModels[selectedItem.name],
             quotaReport: quotaReports[selectedItem.name],
             availableModels: availableModels[selectedItem.name] ?? [],
-            hasLiveModels: (liveModelCounts[selectedItem.name] ?? 0) > 0,
+            hasLiveModels: (liveModelCounts[selectedItem.name] ?? 0) > 0 || (availableModels[selectedItem.name]?.length ?? 0) > 0,
             selectedModels: selectedModels[selectedItem.name] ?? [],
             modelsLoading,
             modelsLoadFailed,

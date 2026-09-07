@@ -56,6 +56,7 @@ export {
 } from "./native-models";
 
 export const DOCUMENTED_NATIVE_OPENAI_ADDITIONS = [
+  "gpt-6-astra",
   "gpt-5.3-codex-spark",
   "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 ];
@@ -102,6 +103,7 @@ export function isUnsupportedOpenAiNativeSlug(slug: string): boolean {
 export const NATIVE_GPT56_CONTEXT_WINDOW = 372_000;
 
 export const NATIVE_OPENAI_CONTEXT_OVERRIDES: Record<string, { contextWindow?: number; maxContextWindow?: number }> = {
+  "gpt-6-astra": { contextWindow: 272_000, maxContextWindow: 872_000 },
   "gpt-5.5": { contextWindow: 272_000, maxContextWindow: 272_000 },
   "gpt-5.4": { contextWindow: 1_000_000, maxContextWindow: 1_000_000 },
   "gpt-5.3-codex-spark": { contextWindow: 100_000, maxContextWindow: 100_000 },
@@ -489,11 +491,11 @@ function catalogNativeSlugs(): string[] {
   const models = cat?.models ?? [];
   const live = models.flatMap(entry => {
     const slug = typeof entry.slug === "string" ? entry.slug : "";
-    return !slug.includes("/") && SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) ? [slug] : [];
+    return !slug.includes("/") && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isAccountBoundOpenAiNativeSlug(slug)) ? [slug] : [];
   });
   const accountBound = models.flatMap(entry => {
     const slug = trustedAccountBoundNativeCatalogSlug(entry);
-    return slug !== undefined && SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) ? [slug] : [];
+    return slug !== undefined && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isAccountBoundOpenAiNativeSlug(slug)) ? [slug] : [];
   });
   // Deliberately ignore `visibility`: it is a rendered projection of disabledModels and account
   // selectors, so treating it as fresh availability would shrink the supported set between syncs.

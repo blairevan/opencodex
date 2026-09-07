@@ -497,10 +497,17 @@ export async function handleModelRoutes(ctx: ManagementContext): Promise<Respons
     const models = await fetchAllModels(config);
     const available: Record<string, string[]> = {};
     for (const m of models) (available[m.provider] ??= []).push(m.id);
+    if (config.providers.openai) {
+      const { nativeModelRows } = await import("../../codex/catalog");
+      available.openai = nativeModelRows(config).map(r => r.slug);
+    }
     const selected: Record<string, string[]> = {};
     // Live-catalog provenance. The GUI cannot infer this by subtracting known custom ids: an id
     // that is both custom and discovered would make a real live catalog look custom-only.
     const liveModelCounts: Record<string, number> = {};
+    if (available.openai) {
+      liveModelCounts.openai = available.openai.length;
+    }
     for (const [name, prov] of Object.entries(config.providers)) {
       if (Array.isArray(prov.selectedModels) && prov.selectedModels.length > 0) selected[name] = [...prov.selectedModels];
       const liveCount = getProviderLiveModelCount(name);
