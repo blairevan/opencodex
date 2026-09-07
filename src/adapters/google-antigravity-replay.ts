@@ -3,6 +3,9 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, statSync } from "node:f
 import { dirname, join } from "node:path";
 import { atomicWriteFileAsync, getConfigDir, type AtomicWriteAsyncTestSeam } from "../config";
 import { enforceAppOwnedMemoryBudget } from "../lib/app-owned-memory";
+import { debugProviderDiagnostic } from "../lib/debug";
+import { isDebugEnabled } from "../lib/debug-settings";
+import { googleThoughtSignatureFingerprint, googleThoughtSignatureFromPart } from "./google-antigravity-wire";
 
 /**
  * Google-family thoughtSignature reasoning-replay cache.
@@ -481,15 +484,6 @@ export function antigravityReplaySessionKeysForTests(): string[] {
   return [...replayCache.keys()];
 }
 
-function extractSignature(part: Record<string, unknown>): string | undefined {
-  const direct = part.thoughtSignature ?? part.thought_signature;
-  if (typeof direct === "string" && direct.length >= MIN_SIGNATURE_LEN) return direct;
-  const extra = part.extra_content as { google?: { thought_signature?: unknown } } | undefined;
-  const nested = extra?.google?.thought_signature;
-  if (typeof nested === "string" && nested.length >= MIN_SIGNATURE_LEN) return nested;
-  return undefined;
-}
-
 function deleteReplaySession(key: string): number {
   const entry = replayCache.get(key);
   if (!entry) return 0;
@@ -610,6 +604,7 @@ export function observeAntigravityReplay(model: string, sessionId: string, parts
   deleteExpiredReplaySessionsThrottled(now);
   const key = replayKey(model, sessionId);
   const existing = replayCache.get(key);
+  const debugEnabled = isDebugEnabled();
   const entry = existing ?? {
     byCall: new Map<string, ReplayCall>(),
     bytes: REPLAY_SESSION_KEY_BYTES,
@@ -619,18 +614,36 @@ export function observeAntigravityReplay(model: string, sessionId: string, parts
   };
   let inserted = false;
   let pendingThoughtSig: string | undefined;
+  let pendingThoughtSigSource: string | undefined;
+  let functionCallIndex = 0;
   for (const raw of parts) {
     if (!raw || typeof raw !== "object") continue;
     const part = raw as Record<string, unknown>;
-    const sig = extractSignature(part);
+    const observed = googleThoughtSignatureFromPart(part);
+    const sig = observed?.signature;
     const fc = part.functionCall as { name?: unknown; args?: unknown } | undefined;
     if (!fc) {
-      if (sig && part.thought === true) pendingThoughtSig = sig;
+      if (sig && part.thought === true) {
+        pendingThoughtSig = sig;
+        pendingThoughtSigSource = observed?.source;
+      }
       continue;
     }
+    functionCallIndex++;
     const callSig = sig ?? pendingThoughtSig;
+    const signatureSource = observed?.source ?? (pendingThoughtSig ? `pending:${pendingThoughtSigSource ?? "unknown"}` : undefined);
     pendingThoughtSig = undefined;
-    if (!callSig) continue;
+    pendingThoughtSigSource = undefined;
+    if (!callSig) {
+      if (debugEnabled) {
+        debugProviderDiagnostic("google-antigravity", "thought-signature-observe", {
+          session_key: key.slice(0, 12),
+          call_index: functionCallIndex,
+          present: false,
+        });
+      }
+      continue;
+    }
     const ck = functionCallKey(fc.name, fc.args);
     if (!ck) continue; // only function-call signatures are replayable by identity
     const signatureBytes = utf8.encode(callSig).byteLength;
@@ -641,6 +654,16 @@ export function observeAntigravityReplay(model: string, sessionId: string, parts
     entry.bytes += sizeBytes;
     replayBytes += sizeBytes;
     inserted = true;
+    if (debugEnabled) {
+      debugProviderDiagnostic("google-antigravity", "thought-signature-observe", {
+        session_key: key.slice(0, 12),
+        call_index: functionCallIndex,
+        present: true,
+        source: signatureSource,
+        call_key: ck.slice(0, 12),
+        fingerprint: googleThoughtSignatureFingerprint(callSig),
+      });
+    }
   }
   if (!inserted) return;
   // Charge the fixed outer key only when the session is actually stored.
@@ -677,11 +700,20 @@ export function applyAntigravityReplay(model: string, sessionId: string, content
   ensureReplaySnapshotLoaded();
   const now = Date.now();
   deleteExpiredReplaySessionsThrottled(now);
-  const entry = replayCache.get(replayKey(model, sessionId));
+  const key = replayKey(model, sessionId);
+  const debugEnabled = isDebugEnabled();
+  const entry = replayCache.get(key);
   if (!entry) {
+    if (debugEnabled) {
+      debugProviderDiagnostic("google-antigravity", "thought-signature-replay", {
+        session_key: key.slice(0, 12),
+        cache_present: false,
+      });
+    }
     return contents;
   }
   let touched = false;
+  let functionCallIndex = 0;
   for (const c of contents as { role?: string; parts?: unknown[] }[]) {
     if (!c || typeof c !== "object" || c.role !== "model" || !Array.isArray(c.parts)) continue;
     for (const raw of c.parts) {
@@ -689,7 +721,20 @@ export function applyAntigravityReplay(model: string, sessionId: string, content
       const part = raw as Record<string, unknown>;
       const fc = part.functionCall as { name?: unknown; args?: unknown } | undefined;
       if (!fc) continue;
-      if (part.thoughtSignature !== undefined || part.thought_signature !== undefined) continue;
+      functionCallIndex++;
+      const existingSignature = googleThoughtSignatureFromPart(part);
+      if (existingSignature) {
+        if (debugEnabled) {
+          debugProviderDiagnostic("google-antigravity", "thought-signature-replay", {
+            session_key: key.slice(0, 12),
+            call_index: functionCallIndex,
+            cache_present: true,
+            source: "history",
+            fingerprint: googleThoughtSignatureFingerprint(existingSignature.signature),
+          });
+        }
+        continue;
+      }
       const ck = functionCallKey(fc.name, fc.args);
       const call = ck ? entry.byCall.get(ck) : undefined;
       if (call && ck) {
@@ -697,6 +742,24 @@ export function applyAntigravityReplay(model: string, sessionId: string, content
         entry.byCall.delete(ck);
         entry.byCall.set(ck, { ...call, touchedAtMs: now });
         touched = true;
+        if (debugEnabled) {
+          debugProviderDiagnostic("google-antigravity", "thought-signature-replay", {
+            session_key: key.slice(0, 12),
+            call_index: functionCallIndex,
+            cache_present: true,
+            source: "replay",
+            call_key: ck.slice(0, 12),
+            fingerprint: googleThoughtSignatureFingerprint(call.signature),
+          });
+        }
+      } else if (debugEnabled) {
+        debugProviderDiagnostic("google-antigravity", "thought-signature-replay", {
+          session_key: key.slice(0, 12),
+          call_index: functionCallIndex,
+          cache_present: true,
+          source: "missing",
+          call_key: ck?.slice(0, 12),
+        });
       }
     }
   }

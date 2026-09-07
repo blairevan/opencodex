@@ -546,6 +546,20 @@ function sseResponse(chunks: unknown[]): Response {
 }
 
 describe("antigravity parseStream unwraps response", () => {
+  test("normalizes snake_case function-call thought signatures into provider metadata", async () => {
+    const adapter = createGoogleAdapter(provider);
+    const signature = "sig-stream-alias-abcdef0123456789";
+    const chunks = [
+      { response: { candidates: [{ content: { parts: [{ functionCall: { name: "do_x", args: { a: 1 } }, thought_signature: signature }] } }] } },
+      { response: { candidates: [{ finishReason: "STOP" }] } },
+    ];
+    const events: AdapterEvent[] = [];
+    for await (const ev of adapter.parseStream(sseResponse(chunks))) events.push(ev);
+    const start = events.find(e => e.type === "tool_call_start");
+    expect(start && "providerMetadata" in start ? start.providerMetadata?.google?.thoughtSignature : undefined)
+      .toBe(signature);
+  });
+
   test("reads response.candidates and response.usageMetadata", async () => {
     const adapter = createGoogleAdapter(provider);
     const chunks = [
@@ -707,6 +721,32 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
         messages: [
           { role: "user", content: "go" },
           { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "get_x", namespace: "mcp__t", arguments: {}, thoughtSignature: "fc_d8df7548e31a4130b7624f3d27571cdd" }] },
+        ],
+        systemPrompt: [], tools: [],
+      },
+      options: {},
+    } as unknown as OcxParsedRequest;
+    const req = await createGoogleAdapter(provider).buildRequest(p);
+    const env = JSON.parse(req.body);
+    const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
+    const fcPart = modelTurn?.parts.find(part => "functionCall" in part);
+    expect(fcPart?.thoughtSignature).toBeUndefined();
+  });
+
+  test("synthetic ids cannot bypass the final wire guard through providerMetadata", async () => {
+    const p = {
+      modelId: "gemini-3-pro",
+      stream: false,
+      context: {
+        messages: [
+          { role: "user", content: "go" },
+          {
+            role: "assistant",
+            content: [{
+              type: "toolCall", id: "c1", name: "get_x", namespace: "mcp__t", arguments: {},
+              providerMetadata: { google: { thoughtSignature: "ctc_038f26d3f20962bc016a54f0fcfa208190a8ec0f289c2ba211" } },
+            }],
+          },
         ],
         systemPrompt: [], tools: [],
       },

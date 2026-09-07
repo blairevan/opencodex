@@ -1,5 +1,6 @@
 import type { AdapterFetchContext, AdapterRequest, ProviderAdapter } from "./base";
-import { debugDroppedFrame } from "../lib/debug";
+import { debugDroppedFrame, debugProviderDiagnostic } from "../lib/debug";
+import { isDebugEnabled } from "../lib/debug-settings";
 import { createHash } from "node:crypto";
 import { createImageBudget, materializeInlineImage, MAX_ENCODED_BYTES_PER_IMAGE, artifactHttpUrl } from "../images/artifacts";
 import type {
@@ -16,10 +17,18 @@ import type {
 import { isAllowedToolChoice, namespacedToolName, resolveToolChoiceWireName, toolAllowedByChoice } from "../types";
 import { contentPartsToText, parseDataUrl } from "./image";
 import { getVertexAccessToken } from "../lib/gcp-adc";
+import { isSyntheticToolCallIdLike } from "../lib/synthetic-tool-id";
 import { fetchAntigravityWithRetry, fetchVertexWithRetry } from "./google-http";
 import { safeAntigravityHttpErrorMessage, safeVertexHttpErrorMessage } from "./google-errors";
 import { isVertexTruncatedTurn, vertexTruncationErrorMessage } from "./google-truncation";
-import { ANTIGRAVITY_REQUEST_UA, antigravitySessionId, isLikelyRealThoughtSignature, sanitizeAntigravityClaudeSignatures } from "./google-antigravity-wire";
+import {
+  ANTIGRAVITY_REQUEST_UA,
+  antigravitySessionId,
+  googleThoughtSignatureFingerprint,
+  googleThoughtSignatureFromPart,
+  isLikelyRealThoughtSignature,
+  sanitizeAntigravityClaudeSignatures,
+} from "./google-antigravity-wire";
 import { compileGoogleWireBody } from "./google-wire-compiler";
 import { identifyRoutedModel } from "./identity";
 import { antigravityUsesReplayCache, applyAntigravityReplay, clearAntigravityReplay, observeAntigravityReplay } from "./google-antigravity-replay";
@@ -216,10 +225,19 @@ function messagesToGeminiFormat(
             // conversion 400s. Gemini accepts the optional id and pairs call/response by it.
             if (callId !== undefined) functionCall.id = callId;
             const part: Record<string, unknown> = { functionCall };
-            // Prefer the metadata that travelled with this exact call; fall back to the legacy
-            // field for callers that have not been migrated. Never merge or synthesize.
-            const signature = tc.providerMetadata?.google?.thoughtSignature ?? tc.thoughtSignature;
-            if (isLikelyRealThoughtSignature(signature)) part.thoughtSignature = signature;
+            // providerMetadata may have crossed client-controlled Responses history. Preserve its
+            // opaque character set, but reject known synthetic item/tool ids again at the final
+            // Google wire boundary as defense in depth. The legacy field keeps the stricter
+            // base64-like heuristic because it mixes provider tokens with synthetic ids.
+            const metadataCandidate = googleThoughtSignatureFromPart({
+              thoughtSignature: tc.providerMetadata?.google?.thoughtSignature,
+            })?.signature;
+            const metadataSignature = metadataCandidate && !isSyntheticToolCallIdLike(metadataCandidate)
+              ? metadataCandidate
+              : undefined;
+            const legacySignature = isLikelyRealThoughtSignature(tc.thoughtSignature) ? tc.thoughtSignature : undefined;
+            const signature = metadataSignature ?? legacySignature;
+            if (signature) part.thoughtSignature = signature;
             parts.push(part);
           }
         }
@@ -362,9 +380,21 @@ interface GoogleResponsePart {
 function googleToolCallMetadataFromPart(
   part: GoogleResponsePart,
 ): { providerMetadata: OcxProviderOpaqueToolCallMetadata } | undefined {
-  const signature = part.thoughtSignature;
-  if (!isLikelyRealThoughtSignature(signature)) return undefined;
-  return { providerMetadata: { google: { thoughtSignature: signature } } };
+  const observed = googleThoughtSignatureFromPart(part as Record<string, unknown>);
+  if (!observed) return undefined;
+  return { providerMetadata: { google: { thoughtSignature: observed.signature } } };
+}
+
+function debugGoogleToolCallSignature(part: GoogleResponsePart, callIndex: number, phase: "stream" | "buffered"): void {
+  if (!isDebugEnabled()) return;
+  const observed = googleThoughtSignatureFromPart(part as Record<string, unknown>);
+  debugProviderDiagnostic("google-antigravity", "thought-signature-inbound", {
+    phase,
+    call_index: callIndex,
+    present: Boolean(observed),
+    source: observed?.source ?? "none",
+    fingerprint: googleThoughtSignatureFingerprint(observed?.signature),
+  });
 }
 
 /**
@@ -380,11 +410,9 @@ function propagateThoughtSignatureToFunctionCalls(
   let lastSignature = previousSignature;
   let functionCallSignatureAssigned = previousFunctionCallSignatureAssigned;
   for (const part of parts) {
-    const directSignature = part.thoughtSignature
-      ?? (part as GoogleResponsePart & { thought_signature?: string }).thought_signature
-      ?? ((part as GoogleResponsePart & { extra_content?: { google?: { thought_signature?: string } } })
-        .extra_content?.google?.thought_signature);
-    if (part.thought === true && isLikelyRealThoughtSignature(directSignature)) {
+    const observed = googleThoughtSignatureFromPart(part as Record<string, unknown>);
+    const directSignature = observed?.signature;
+    if (part.thought === true && directSignature) {
       lastSignature = directSignature;
     } else if (part.functionCall && !functionCallSignatureAssigned) {
       if (!directSignature && lastSignature) part.thoughtSignature = lastSignature;
@@ -749,6 +777,9 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             if (part.functionCall) {
               const id = `call_${crypto.randomUUID().slice(0, 8)}`;
               toolCallsStarted++;
+              if (provider.googleMode === "cloud-code-assist") {
+                debugGoogleToolCallSignature(part, toolCallsStarted, "stream");
+              }
               emittedContentEvent = true;
               yield {
                 type: "tool_call_start",
@@ -983,6 +1014,9 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           if (part.functionCall) {
             const id = `call_${crypto.randomUUID().slice(0, 8)}`;
             toolCallsStarted++;
+            if (provider.googleMode === "cloud-code-assist") {
+              debugGoogleToolCallSignature(part, toolCallsStarted, "buffered");
+            }
             events.push({
               type: "tool_call_start",
               id,

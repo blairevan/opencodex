@@ -12,6 +12,7 @@
  * wire, so a loop that rebuilds a call only has to carry one field instead of knowing about
  * any provider. Values are treated as opaque: never parsed, merged, re-encoded, or synthesized.
  */
+import { isSyntheticToolCallIdLike } from "../lib/synthetic-tool-id";
 import type { OcxProviderOpaqueToolCallMetadata } from "../types";
 
 /** Wire shape: `extra_content.google.thought_signature` on a Responses function_call item. */
@@ -47,7 +48,7 @@ export function providerMetadataFromResponsesFunctionCall(
   const google = (extra as ResponsesExtraContent).google;
   if (!isObj(google)) return undefined;
   const signature = google.thought_signature;
-  if (!isCarryableSignature(signature)) return undefined;
+  if (!isCarryableSignature(signature) || isSyntheticToolCallIdLike(signature)) return undefined;
   return { google: { thoughtSignature: signature } };
 }
 

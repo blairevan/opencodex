@@ -42,6 +42,25 @@ describe("provider-opaque tool-call metadata (#1735)", () => {
     expect(responsesExtraContentFromProviderMetadata({})).toBeUndefined();
   });
 
+  test("client-supplied synthetic item ids cannot be promoted into provider metadata", () => {
+    for (const synthetic of [
+      "ctc_038f26d3f20962bc016a54f0fcfa208190a8ec0f289c2ba211",
+      "fc_d8df7548e31a4130b7624f3d27571cdd",
+      "call_d0fa80e4abcdef012345",
+      "toolu_01abcdef0123456789",
+    ]) {
+      expect(providerMetadataFromResponsesFunctionCall({
+        extra_content: { google: { thought_signature: synthetic } },
+      })).toBeUndefined();
+    }
+
+    // Do not regress to charset guessing: non-synthetic provider tokens stay opaque.
+    const opaque = "opaque:provider:signature:with:new-charset";
+    expect(providerMetadataFromResponsesFunctionCall({
+      extra_content: { google: { thought_signature: opaque } },
+    })?.google?.thoughtSignature).toBe(opaque);
+  });
+
   test("an oversized signature is refused at every boundary", () => {
     // Matches the ceiling the Antigravity replay cache already enforces: a token this large is
     // not a real signature, and carrying it would push unbounded state through history replay.

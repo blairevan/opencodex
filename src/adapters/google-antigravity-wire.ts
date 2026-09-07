@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isSyntheticToolCallIdLike } from "../lib/synthetic-tool-id";
 import type { OcxContentPart, OcxParsedRequest } from "../types";
 import { antigravityUserAgent } from "./client-fingerprint";
 
@@ -30,10 +31,54 @@ export const ANTIGRAVITY_REQUEST_UA = process.env.GOOGLE_ANTIGRAVITY_USER_AGENT 
 export function isLikelyRealThoughtSignature(sig: string | undefined): boolean {
   if (typeof sig !== "string" || sig.length < 16) return false;
   // Reject synthetic Responses/tool-call ids and Anthropic tool-use ids (`_` or `-` separators).
-  if (/^(fc|ctc|tsc|call|msg|rs|resp|reasoning|item|ws|toolu|tool|func|function)[-_]/i.test(sig)) return false;
-  // Real Gemini thought signatures are opaque base64/base64url blobs: only [A-Za-z0-9+/_=-].
-  // Anything containing other characters (or whitespace) is not a real signature.
+  if (isSyntheticToolCallIdLike(sig)) return false;
+  // Real Gemini thought signatures observed so far are base64/base64url-like. Keep this heuristic
+  // only for legacy/history fields where foreign ids can be mixed into the same slot.
   return /^[A-Za-z0-9+/_=-]+$/.test(sig);
+}
+
+export type GoogleThoughtSignatureSource =
+  | "thoughtSignature"
+  | "thought_signature"
+  | "extra_content.google.thought_signature";
+
+export interface GoogleThoughtSignatureObservation {
+  signature: string;
+  source: GoogleThoughtSignatureSource;
+}
+
+const GOOGLE_THOUGHT_SIGNATURE_MAX_BYTES = 64 * 1024;
+
+/**
+ * Read an upstream Google-family thought signature without assuming a specific opaque-token
+ * character set. The alias tolerance is intentionally broader than `isLikelyRealThoughtSignature`:
+ * this path consumes provider-owned response fields, not history fields that may contain synthetic
+ * Responses/tool ids. Size/minimum-length bounds match the replay/provider-metadata seams.
+ */
+export function googleThoughtSignatureFromPart(
+  part: Record<string, unknown> | undefined,
+): GoogleThoughtSignatureObservation | undefined {
+  if (!part) return undefined;
+  const candidates: Array<[GoogleThoughtSignatureSource, unknown]> = [
+    ["thoughtSignature", part.thoughtSignature],
+    ["thought_signature", part.thought_signature],
+    [
+      "extra_content.google.thought_signature",
+      (part.extra_content as { google?: { thought_signature?: unknown } } | undefined)?.google?.thought_signature,
+    ],
+  ];
+  for (const [source, value] of candidates) {
+    if (typeof value !== "string" || value.length < 16) continue;
+    if (Buffer.byteLength(value, "utf8") > GOOGLE_THOUGHT_SIGNATURE_MAX_BYTES) continue;
+    return { signature: value, source };
+  }
+  return undefined;
+}
+
+/** Short one-way identifier for opt-in diagnostics; never log the opaque signature itself. */
+export function googleThoughtSignatureFingerprint(signature: string | undefined): string | undefined {
+  if (!signature) return undefined;
+  return createHash("sha256").update(signature, "utf8").digest("hex").slice(0, 12);
 }
 
 function firstUserText(parsed: OcxParsedRequest): string | undefined {
