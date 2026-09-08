@@ -79,6 +79,24 @@ describe("antigravity per-account quota", () => {
     expect(claWeekly?.percent).toBe(0);
   });
 
+  test("normalizes a five-hour reset that upstream reports one day too late", () => {
+    const now = new Date(2026, 8, 8, 11, 43, 0).getTime();
+    const parsed = parseAntigravityQuotaSummary({
+      groups: [{
+        displayName: "Gemini Models",
+        buckets: [{
+          displayName: "Five Hour Limit Remaining",
+          window: "5h",
+          resetTime: new Date(now + 27 * 60 * 60_000).toISOString(),
+          remainingFraction: 0.2,
+        }],
+      }],
+    }, now);
+    const gem5h = parsed?.customWindows?.find(w => w.label === "Gemini (5h)");
+
+    expect(gem5h?.resetAt).toBe(now + 3 * 60 * 60_000);
+  });
+
   test("parseAntigravityBucketsQuota parses retrieveUserQuota buckets", () => {
     const mockBuckets = [
       {

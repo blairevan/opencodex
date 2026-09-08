@@ -1867,6 +1867,23 @@ function antigravityUsedPercent(quotaInfo: Record<string, unknown>): number | un
   return normalizePercent(100 - remaining);
 }
 
+const ANTIGRAVITY_FIVE_HOUR_WINDOW_MS = 5 * 60 * 60_000;
+const ANTIGRAVITY_RESET_TIME_TOLERANCE_MS = 15 * 60_000;
+
+/**
+ * Correct the known Antigravity five-hour reset-time drift where the upstream response can
+ * report the next calendar day's matching clock time instead of the current window's reset.
+ * Weekly and other windows must retain the upstream timestamp unchanged.
+ */
+function normalizeAntigravityResetAt(value: unknown, isFiveHour: boolean, now: number): number | undefined {
+  const resetAt = normalizeResetAt(value);
+  if (!isFiveHour || resetAt === undefined) return resetAt;
+  const latestExpectedReset = now + ANTIGRAVITY_FIVE_HOUR_WINDOW_MS + ANTIGRAVITY_RESET_TIME_TOLERANCE_MS;
+  if (resetAt <= latestExpectedReset) return resetAt;
+  const previousCalendarDay = resetAt - 24 * 60 * 60_000;
+  return previousCalendarDay > now ? previousCalendarDay : resetAt;
+}
+
 export function parseAntigravityBucketsQuota(buckets: Record<string, unknown>[]): ProviderQuota | null {
   const windows = new Map<string, ProviderQuotaWindow>();
   for (const bucket of buckets) {
@@ -1897,7 +1914,7 @@ export function parseAntigravityBucketsQuota(buckets: Record<string, unknown>[])
   };
 }
 
-export function parseAntigravityQuotaSummary(summary: Record<string, unknown>): ProviderQuota | null {
+export function parseAntigravityQuotaSummary(summary: Record<string, unknown>, now = Date.now()): ProviderQuota | null {
   const groups = summary.groups;
   if (!Array.isArray(groups)) return null;
   const customWindows: ProviderQuotaWindow[] = [];
@@ -1916,9 +1933,9 @@ export function parseAntigravityQuotaSummary(summary: Record<string, unknown>): 
       if (!bucket || typeof bucket !== "object") continue;
       const percent = antigravityUsedPercent(bucket);
       if (percent === undefined) continue;
-      const resetAt = normalizeResetAt(bucket.resetTime);
       const isWeekly = bucket.window === "weekly" || /weekly/i.test(bucket.displayName ?? "");
       const is5h = bucket.window === "5h" || /5-hour|5h|five hour/i.test(bucket.displayName ?? "");
+      const resetAt = normalizeAntigravityResetAt(bucket.resetTime, is5h, now);
       const windowSuffix = isWeekly ? "Weekly" : is5h ? "5h" : bucket.window ?? "Quota";
       const label = `${familyPrefix} (${windowSuffix})`;
 
