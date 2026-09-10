@@ -159,6 +159,22 @@ function barFillStyle(percent: number): CSSProperties {
   return { ["--bar-scale" as string]: String(barWidth(percent) / 100) };
 }
 
+/** Choose a clock refresh cadence so reset-day labels stay correct while a page remains open. */
+export function quotaRefreshIntervalMs(rows: readonly QuotaBarRow[], now = Date.now()): number | null {
+  let hasFutureReset = false;
+  let hasSubHourReset = false;
+  for (const row of rows) {
+    if (typeof row.resetAt !== "number" || !Number.isFinite(row.resetAt)) continue;
+    const resetMs = row.resetAt < 10_000_000_000 ? row.resetAt * 1000 : row.resetAt;
+    const diff = resetMs - now;
+    if (diff <= 0) continue;
+    hasFutureReset = true;
+    if (diff < 3600_000) hasSubHourReset = true;
+  }
+  if (!hasFutureReset) return null;
+  return hasSubHourReset ? 1000 : 60_000;
+}
+
 export default function QuotaBars({
   quota,
   plan,
@@ -190,20 +206,15 @@ export default function QuotaBars({
   const rows = buildQuotaRows(quota, plan, t);
   const [now, setNow] = useState(() => Date.now());
 
-  const hasSubHourReset = rows.some(r => {
-    if (typeof r.resetAt !== "number" || !Number.isFinite(r.resetAt)) return false;
-    const ms = r.resetAt < 10_000_000_000 ? r.resetAt * 1000 : r.resetAt;
-    const diff = ms - now;
-    return diff > 0 && diff < 3600_000;
-  });
+  const refreshIntervalMs = quotaRefreshIntervalMs(rows, now);
 
   useEffect(() => {
-    if (!hasSubHourReset) return;
+    if (refreshIntervalMs === null) return;
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 1000);
+    }, refreshIntervalMs);
     return () => window.clearInterval(timer);
-  }, [hasSubHourReset]);
+  }, [refreshIntervalMs]);
 
   if (rows.length === 0) {
     if (!pending) return null;

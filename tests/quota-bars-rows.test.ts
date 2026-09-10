@@ -6,6 +6,7 @@ import {
   isQuotaExhausted,
   isQuotaWarn,
   maxQuotaUtilisation,
+  quotaRefreshIntervalMs,
   quotaBarTone,
 } from "../gui/src/components/QuotaBars";
 import type { AccountQuota } from "../gui/src/codex-quota-utils";
@@ -149,5 +150,27 @@ describe("formatResetFuture", () => {
   test("seconds-epoch inputs are normalized to milliseconds", () => {
     const secs = Math.floor((NOW + 30 * 60_000) / 1000);
     expect(formatResetFuture(secs, t, "en", NOW)).toBe("quota.resetsRelativeMinutesSeconds:30,0,12:30");
+  });
+});
+
+describe("quotaRefreshIntervalMs", () => {
+  const NOW = new Date(2026, 8, 10, 16, 0, 0).getTime();
+  const row = (resetAt: number) => ({
+    label: "Gemini (5h)",
+    limitLabel: "Gemini (5h)",
+    percent: 35,
+    resetAt,
+  });
+
+  test("refreshes long-lived quota rows so a page crossing midnight updates its day label", () => {
+    expect(quotaRefreshIntervalMs([row(NOW + 3 * 60 * 60_000)], NOW)).toBe(60_000);
+  });
+
+  test("refreshes sub-hour quota rows every second", () => {
+    expect(quotaRefreshIntervalMs([row(NOW + 30 * 60_000)], NOW)).toBe(1_000);
+  });
+
+  test("does not schedule a timer when no future reset exists", () => {
+    expect(quotaRefreshIntervalMs([row(NOW - 1_000)], NOW)).toBeNull();
   });
 });
