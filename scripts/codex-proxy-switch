@@ -1,0 +1,315 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+codex-proxy-switch: 一键切换 Codex Desktop / CLI 的网络路由模式
+支持在 'OpenCodex 代理模式' 与 '官方直连模式' 之间快速切换，
+解决 opencodex 开发/维护期间服务不可用导致 Codex Desktop 瘫痪的问题。
+"""
+
+import os
+import sys
+import re
+import socket
+import shutil
+import subprocess
+from datetime import datetime
+from pathlib import Path
+
+# ANSI 颜色定义
+GREEN = "\033[1;32m"
+BLUE = "\033[1;34m"
+YELLOW = "\033[1;33m"
+RED = "\033[1;31m"
+CYAN = "\033[1;36m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+CODEX_DIR = Path(os.environ.get("CODEX_HOME", os.path.expanduser("~/.codex")))
+CONFIG_FILE = CODEX_DIR / "config.toml"
+BACKUP_DIR = CODEX_DIR / "backups"
+DEFAULT_DIRECT_MODEL = "gpt-5"
+PROXY_PORT = 10100
+
+
+def check_port_listening(host="127.0.0.1", port=PROXY_PORT, timeout=0.8):
+    """检测指定端口是否处于监听状态"""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def get_process_info_on_port(port=PROXY_PORT):
+    """获取占用指定端口的进程简要信息"""
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+        lines = [line.strip() for line in out.strip().splitlines() if line.strip()]
+        if len(lines) > 1:
+            return lines[1]
+    except Exception:
+        pass
+    return None
+
+
+def ensure_backup(config_path: Path):
+    """备份当前配置文件，最多保留最近 10 个历史备份"""
+    if not config_path.exists():
+        return None
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = BACKUP_DIR / f"config.toml.bak.{ts}"
+    shutil.copy2(config_path, backup_path)
+
+    backups = sorted(BACKUP_DIR.glob("config.toml.bak.*"), key=lambda p: p.stat().st_mtime)
+    if len(backups) > 10:
+        for old in backups[:-10]:
+            try:
+                old.unlink()
+            except Exception:
+                pass
+    return backup_path
+
+
+def parse_config(content: str):
+    """解析当前 config.toml 中的关键路由状态"""
+    is_proxy = bool(re.search(r"^[ \t]*openai_base_url[ \t]*=", content, re.MULTILINE))
+
+    # 提取当前激活的 model
+    model_match = re.search(r'^[ \t]*model[ \t]*=[ \t]*"([^"]+)"', content, re.MULTILINE)
+    current_model = model_match.group(1) if model_match else "(默认)"
+
+    # 提取之前备份保存的 ocx_model
+    ocx_model_match = re.search(r'^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*"([^"]+)"', content, re.MULTILINE)
+    saved_ocx_model = ocx_model_match.group(1) if ocx_model_match else None
+
+    # 提取当前 base_url
+    url_match = re.search(r'^[ \t]*openai_base_url[ \t]*=[ \t]*"([^"]+)"', content, re.MULTILINE)
+    current_url = url_match.group(1) if url_match else None
+
+    return {
+        "is_proxy": is_proxy,
+        "current_model": current_model,
+        "saved_ocx_model": saved_ocx_model,
+        "current_url": current_url,
+    }
+
+
+def switch_to_direct(content: str, fallback_model=DEFAULT_DIRECT_MODEL):
+    """
+    转换为直连官方模式：
+    1. 注释 openai_base_url
+    2. 注释 model_catalog_json
+    3. 若当前 model 包含 '/' (第三方路由模型)，备份为 # ocx_model 并临时替换为官方模型
+    """
+    lines = content.splitlines()
+    new_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # 1. 注释 openai_base_url
+        if re.match(r"^[ \t]*openai_base_url[ \t]*=", line):
+            new_lines.append(f"# {stripped}")
+            continue
+
+        # 2. 注释 model_catalog_json
+        if re.match(r"^[ \t]*model_catalog_json[ \t]*=", line):
+            new_lines.append(f"# {stripped}")
+            continue
+
+        # 3. 处理 model
+        model_match = re.match(r'^[ \t]*model[ \t]*=[ \t]*"([^"]+)"', line)
+        if model_match:
+            model_val = model_match.group(1)
+            if "/" in model_val:
+                new_lines.append(f'# ocx_model = "{model_val}"')
+                new_lines.append(f'model = "{fallback_model}"')
+                continue
+
+        new_lines.append(line)
+
+    result = "\n".join(new_lines)
+    if not result.endswith("\n"):
+        result += "\n"
+    return result
+
+
+def switch_to_proxy(content: str):
+    """
+    转换为 OpenCodex 代理模式：
+    1. 解开 openai_base_url 注释
+    2. 解开 model_catalog_json 注释
+    3. 恢复之前的 ocx_model 并移除临时的直连 model
+    """
+    lines = content.splitlines()
+    new_lines = []
+
+    saved_ocx_model = None
+    for line in lines:
+        m = re.match(r'^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*"([^"]+)"', line)
+        if m:
+            saved_ocx_model = m.group(1)
+            break
+
+    skip_next_model = False
+    for line in lines:
+        # 1. 如果有保存的 ocx_model，当前行是 # ocx_model 声明，则恢复它
+        if re.match(r"^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*", line):
+            if saved_ocx_model:
+                new_lines.append(f'model = "{saved_ocx_model}"')
+                skip_next_model = True
+                continue
+
+        # 跳过切换到直连时添加的临时 model
+        if skip_next_model and re.match(r"^[ \t]*model[ \t]*=[ \t]*", line):
+            skip_next_model = False
+            continue
+        skip_next_model = False
+
+        # 2. 解除 openai_base_url 注释
+        if re.match(r"^[ \t]*#[ \t]*openai_base_url[ \t]*=", line):
+            uncommented = re.sub(r"^[ \t]*#[ \t]*", "", line)
+            new_lines.append(uncommented)
+            continue
+
+        # 3. 解除 model_catalog_json 注释
+        if re.match(r"^[ \t]*#[ \t]*model_catalog_json[ \t]*=", line):
+            uncommented = re.sub(r"^[ \t]*#[ \t]*", "", line)
+            new_lines.append(uncommented)
+            continue
+
+        new_lines.append(line)
+
+    result_text = "\n".join(new_lines)
+    if not re.search(r"^[ \t]*openai_base_url[ \t]*=", result_text, re.MULTILINE):
+        result_text += f'\n# Auto-injected by opencodex\nopenai_base_url = "http://127.0.0.1:{PROXY_PORT}/v1"\n'
+
+    if not result_text.endswith("\n"):
+        result_text += "\n"
+    return result_text
+
+
+def print_status():
+    """输出当前路由状态报告"""
+    if not CONFIG_FILE.exists():
+        print(f"{RED}错误: 配置文件不存在: {CONFIG_FILE}{RESET}")
+        return
+
+    content = CONFIG_FILE.read_text(encoding="utf-8")
+    status = parse_config(content)
+    is_listening = check_port_listening()
+    proc_info = get_process_info_on_port()
+
+    print(f"\n{BOLD}=== Codex Desktop / CLI 路由状态 ==={RESET}")
+    print(f"配置文件: {CYAN}{CONFIG_FILE}{RESET}")
+
+    if status["is_proxy"]:
+        print(f"当前模式: {GREEN}🟢 OpenCodex 代理模式 (PROXY){RESET}")
+        print(f"代理地址: {CYAN}{status['current_url'] or f'http://127.0.0.1:{PROXY_PORT}/v1'}{RESET}")
+        print(f"当前模型: {CYAN}{status['current_model']}{RESET}")
+    else:
+        print(f"当前模式: {BLUE}🔵 官方直连模式 (DIRECT / BYPASS){RESET}")
+        print(f"代理地址: {YELLOW}(已绕过代理，直接连接官方 API){RESET}")
+        print(f"当前模型: {CYAN}{status['current_model']}{RESET}")
+        if status["saved_ocx_model"]:
+            print(f"备存模型: {YELLOW}{status['saved_ocx_model']} (切回代理时将自动还原){RESET}")
+
+    print("---------------------------------------")
+    if is_listening:
+        print(f"本地服务: {GREEN}✔ 127.0.0.1:{PROXY_PORT} 正常监听中{RESET}")
+        if proc_info:
+            print(f"服务进程: {proc_info}")
+    else:
+        print(f"本地服务: {RED}✖ 127.0.0.1:{PROXY_PORT} 未在监听{RESET}")
+        if status["is_proxy"]:
+            print(f"{YELLOW}⚠️ 注意: 当前处于代理模式，但 10100 服务不可用！Codex Desktop 请求将失败。{RESET}")
+            print(f"   建议执行: {BOLD}codex-proxy-switch direct{RESET} 切换为直连，或启动本地代理服务。")
+    print()
+
+
+def apply_switch(target_mode: str, fallback_model=DEFAULT_DIRECT_MODEL):
+    """执行模式切换"""
+    if not CONFIG_FILE.exists():
+        print(f"{RED}错误: 配置文件不存在: {CONFIG_FILE}{RESET}")
+        sys.exit(1)
+
+    content = CONFIG_FILE.read_text(encoding="utf-8")
+    current_status = parse_config(content)
+
+    if target_mode == "toggle":
+        target_mode = "direct" if current_status["is_proxy"] else "proxy"
+
+    if target_mode in ("direct", "bypass"):
+        if not current_status["is_proxy"]:
+            print(f"{YELLOW}当前已处于官方直连模式，无需切换。{RESET}")
+            print_status()
+            return
+
+        backup_path = ensure_backup(CONFIG_FILE)
+        new_content = switch_to_direct(content, fallback_model=fallback_model)
+        CONFIG_FILE.write_text(new_content, encoding="utf-8")
+        print(f"{GREEN}✔ 已成功切换到 [官方直连模式] (DIRECT / BYPASS){RESET}")
+        if backup_path:
+            print(f"   配置已备份至: {backup_path}")
+        print("   已注释 proxy 代理与路由模型配置，Codex Desktop 现已脱离本地 OpenCodex 运行。")
+
+    elif target_mode in ("proxy", "ocx", "opencodex"):
+        if current_status["is_proxy"]:
+            print(f"{YELLOW}当前已处于 OpenCodex 代理模式，无需切换。{RESET}")
+            print_status()
+            return
+
+        backup_path = ensure_backup(CONFIG_FILE)
+        new_content = switch_to_proxy(content)
+        CONFIG_FILE.write_text(new_content, encoding="utf-8")
+        print(f"{GREEN}✔ 已成功切换到 [OpenCodex 代理模式] (PROXY){RESET}")
+        if backup_path:
+            print(f"   配置已备份至: {backup_path}")
+
+        is_listening = check_port_listening()
+        if not is_listening:
+            print(f"{RED}⚠️ 警告: 检测到 127.0.0.1:{PROXY_PORT} 当前尚未启动！{RESET}")
+            print("   请启动 opencodex 服务，或执行: launchctl kickstart -k gui/$(id -u)/com.opencodex.proxy")
+        else:
+            print(f"{GREEN}✔ 127.0.0.1:{PROXY_PORT} 运行正常，代理就绪。{RESET}")
+
+    print_status()
+
+
+def main():
+    action = "toggle"
+    if len(sys.argv) > 1:
+        action = sys.argv[1].lower().strip("-")
+
+    if action in ("status", "info", "check"):
+        print_status()
+    elif action in ("direct", "bypass", "native"):
+        model = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_DIRECT_MODEL
+        apply_switch("direct", fallback_model=model)
+    elif action in ("proxy", "ocx", "opencodex"):
+        apply_switch("proxy")
+    elif action in ("toggle", "switch"):
+        apply_switch("toggle")
+    elif action in ("help", "h"):
+        print(f"""
+{BOLD}codex-proxy-switch{RESET} - Codex Desktop / CLI 代理与直连一键切换工具
+
+{BOLD}用法:{RESET}
+  codex-proxy-switch            自动在代理模式与直连模式之间翻转 (Toggle)
+  codex-proxy-switch status     查看当前生效模式及本地 10100 端口服务健康度
+  codex-proxy-switch direct     强制切换为官方直连模式 (Bypass 代理，使用默认 gpt-5)
+  codex-proxy-switch direct <m> 切换为官方直连模式并指定直连模型 (如 o3, o4-mini)
+  codex-proxy-switch proxy      强制切回 OpenCodex 代理模式 (恢复原路由模型与端口)
+""")
+    else:
+        print(f"{RED}未知命令: {action}。运行 'codex-proxy-switch help' 查看帮助。{RESET}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
