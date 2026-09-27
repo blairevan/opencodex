@@ -47,6 +47,11 @@ import {
   antigravityReplayMetrics,
   observeAntigravityReplay,
 } from "../src/adapters/google-antigravity-replay";
+import {
+  clearGoogleThoughtSignatureLedgerForTests,
+  createGoogleThoughtSignatureScope,
+  rememberGoogleThoughtSignatures,
+} from "../src/responses/google-thought-signature-ledger";
 
 function context(
   generation: number,
@@ -69,12 +74,14 @@ beforeEach(() => {
   resetAppOwnedMemoryForTests();
   clearResponseStateMemoryForTests();
   __resetAntigravityReplayCache();
+  clearGoogleThoughtSignatureLedgerForTests();
 });
 afterEach(() => {
   resetStateStoreSweeperForTests();
   resetAppOwnedMemoryForTests();
   clearResponseStateMemoryForTests();
   __resetAntigravityReplayCache();
+  clearGoogleThoughtSignatureLedgerForTests();
   setOcxStartProcessCacheForTests([]);
   setOcxStartProcessProbeForTests(null);
 });
@@ -87,8 +94,10 @@ describe("state-store sweeper", () => {
       "provider-request-pacing",
       "combo-target-cooldowns",
       "anthropic-routing-health",
+      "antigravity-routing-health",
       "xai-refresh-verdicts",
       "responses-continuation",
+      "google-thought-signature-ledger",
       "antigravity-replay",
       "config-warning-memos",
       "catalog-warning-memos",
@@ -113,6 +122,13 @@ describe("state-store sweeper", () => {
 
   test("a sweeper tick expires continuation and Antigravity rows without store traffic", () => {
     rememberResponseState({ input: "old" }, { id: "resp_sweeper_ttl", output: [], status: "completed" });
+    rememberGoogleThoughtSignatures(createGoogleThoughtSignatureScope({
+      destination: "https://cloudcode-pa.googleapis.com",
+      project: "project",
+      account: "account",
+      wireModel: "gemini-3.6-flash",
+      conversation: "thread",
+    }), [{ type: "function_call", call_id: "call_sweeper_ttl", extra_content: { google: { thought_signature: "signature-old" } } }]);
     observeAntigravityReplay("gemini-3-pro", "session-old", [{
       thoughtSignature: "signature-long-enough-for-sweep",
       functionCall: { name: "lookup", args: { q: "old" } },
@@ -120,11 +136,11 @@ describe("state-store sweeper", () => {
     expect(responseStateMetrics().count).toBe(1);
     expect(antigravityReplayMetrics().sessions).toBe(1);
 
-    for (const name of ["responses-continuation", "antigravity-replay"]) {
+    for (const name of ["responses-continuation", "google-thought-signature-ledger", "antigravity-replay"]) {
       registerStateStore(STATE_STORE_REGISTRATIONS.find(registration => registration.name === name)!);
     }
     const result = sweepExpired(Date.now() + 60 * 60 * 1_000 + 1);
-    expect(result.rowsRemoved).toBe(2);
+    expect(result.rowsRemoved).toBe(3);
     expect(responseStateMetrics().count).toBe(0);
     expect(antigravityReplayMetrics().sessions).toBe(0);
   });

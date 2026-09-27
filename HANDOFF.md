@@ -6,14 +6,20 @@
 
 ## 1. 当前任务
 
-**分支**: `fix/429-transient-retry`（基于 v2.21.0）
+**当前事项**: 将 Antigravity thought-signature 跨请求恢复补强合入个人 Fork `main`，并重启本机 OpenCodex 服务。
 
-**目标**: 修复 OpenCodeX 在遇到 429 限流时的重试机制，确保所有上游请求路径都使用 `fetchWithTransientRetry`（含 429 退避），而非仅连接重置重试的 `fetchWithResetRetry`。
+**个人 Fork**: `blairevan/opencodex:main` 基线为 `23101efad`；当前功能尚在交付分支，完成后记录实际合入提交。Fork `main` 保持 v2.21.0 版本元数据；本次没有将上游数千个提交合入。
 
-**涉及路径**:
-- `src/lib/upstream-retry.ts` — transient retry 参数
-- `src/server/responses/core.ts` — routed 模型路径、rebuildAndRefetch、fetchContinuation
-- `src/web-search/loop.ts` — web-search 循环
+**服务 checkout**: `/opt/app/aitools/opencodex` 的本地 `main` 在 `7b8270fa6`，合入远端 Fork `main` 并保留本地文档规划提交 `88d0ec4e4`；工作区干净。
+
+**运行服务**: LaunchAgent `com.opencodex.proxy`，端口 `10100`。2026-09-28 07:42 检查 PID `92918`，`/healthz` 返回 `status: ok`、版本 `2.21.0`。启动路径指向上述源码 checkout。
+
+**上游关系**: PR [#6143](https://github.com/lidge-jun/opencodex/pull/6143) 仍为 Draft/Open，来源 `codex/model-catalog-sync`，目标上游 `dev`；Fork `main` 的兼容移植不会自动更新该 PR。
+
+**相关分支**:
+- Fork `codex/integration` / `origin/codex/integration`: `2a8f4eff3`，包含模型同步功能。
+- Fork `codex/model-catalog-sync` 是 PR #6143 的来源分支；本地旧分支 `codex/model-catalog-sync-current` 已删除。
+- Antigravity thought-signature ledger 已从错误的上游 `dev` 开发基线迁移并适配 Fork `main`，当前在 `codex/antigravity-signature-ledger-fork-main`。
 
 ---
 
@@ -42,7 +48,7 @@
 
 ---
 
-## 3. 卡住的问题
+## 3. 历史排查记录
 
 ### 3.1 Codex Desktop 无法通过 shim 自动拉起代理
 
@@ -50,21 +56,22 @@
 - **原因**: `ocx codex-shim` 只拦截终端 `codex` CLI 命令（替换 PATH 中的 shell 脚本），Codex Desktop 作为 macOS `.app` 不经过 shell PATH，直接执行内部二进制
 - **已解决**: 通过 `ocx service install` 安装 launchd 后台服务，开机自启，常驻后台，不再依赖 shim 触发
 
-### 3.2 opencodex 版本落后
+### 3.2 源码版本与上游版本差异
 
-- 当前 npm 全局安装: v2.10.0
-- 最新: v2.21.0
-- 未从源码安装，`ocx` 命令指向 npm 全局路径
+- 当前运行源码版本仍报告 v2.21.0；Fork `main` 也保留 v2.21.0 版本元数据。
+- 上游 `main` 已到 v2.69.0。两条线历史差异很大；本次仅将模型同步功能移植到 Fork `main`，没有同步整个上游历史。
 
 ---
 
 ## 4. 下一步计划
 
-- [x] 切换安装方式：从 npm 全局安装改为源码 `npm link`（已自动重写 shim 路径）
-- [x] 配置 `ocx service install` 实现开机自启（launchd，macOS），不再依赖 shim 触发起动
-- [ ] 推送 `fix/429-transient-retry` 到 fork：`git push --force-with-lease origin fix/429-transient-retry`
-- [ ] 验证 429 重试在实际场景中的表现
-- [ ] 向主仓库提 PR（如果修复需要合入上游）
+- [x] 将 Desktop `models_cache.json` watcher 移植到个人 Fork `main`，并推送提交 `dd52011cd`、`23101efad`。
+- [x] 将 Fork `main` 同步到服务源码 checkout，保留本地文档提交。
+- [x] 重启 LaunchAgent 并检查新 PID、监听端口及 `/healthz`。
+- [ ] 运行回归测试：`bun test tests/codex-desktop-model-cache-sync.test.ts`。
+- [ ] 构建文档站：`cd docs-site && bun install --frozen-lockfile && bun run build`。
+- [ ] 继续处理上游 PR #6143 的验证与 Review Readiness；PR 目前保持 Draft。
+- [x] Antigravity thought-signature ledger 以个人 Fork `main` 为基线完成适配；此次不合入上游 `dev`。
 
 ---
 
@@ -109,6 +116,12 @@
 - `gui/dist` — 需 `bun run build:gui`
 - 标准流程：`bun install && bun run build:gui && npm link`
 
+### 5.5 Fork 推送与本地服务重启
+
+- **问题**: 推送到 GitHub Fork 不会自动更新 `/opt/app/aitools/opencodex` 的源码 checkout；单纯重启仍会加载本地旧代码。
+- **本次处理**: 先 fetch Fork `main`，把它合入服务使用的本地 checkout 并保留本地提交，再通过 `launchctl kickstart -k "gui/$(id -u)/com.opencodex.proxy"` 重启。
+- **验证**: 同时检查 `lsof -nP -iTCP:10100 -sTCP:LISTEN` 和 `curl -fsS http://127.0.0.1:10100/healthz`；kickstart 成功本身不代表服务已健康。
+
 ---
 
 ## 6. 环境信息
@@ -116,14 +129,15 @@
 | 项目 | 值 |
 |------|-----|
 | 仓库路径 | `/opt/app/aitools/opencodex` |
-| 安装方式 | 源码 `npm link`（非 npm registry） |
+| 安装方式 | LaunchAgent 直接运行源码 checkout 中的 Bun CLI |
 | Fork | `github.com/blairevan/opencodex` |
 | 上游 | `github.com/lidge-jun/opencodex` |
 | Node | v22.16.0 (nvm) |
 | 运行时 | Bun (bundled) |
-| opencodex 版本 | v2.21.0（源码） |
-| 当前分支 | `fix/429-transient-retry` |
-| 基于 | main @ v2.21.0 |
+| opencodex 版本 | v2.21.0（`/healthz` 与 Fork `main` 元数据） |
+| Fork `main` | `23101efad` |
+| 服务 checkout 分支 | 本地 `main` @ `7b8270fa6`，包含 Fork `main` 与本地文档提交 |
+| 服务 | LaunchAgent `com.opencodex.proxy`，PID `92918`，端口 `10100`（2026-09-28 07:42 检查） |
 
 ---
 
@@ -144,6 +158,7 @@
 | 2026-08-18 10:35 | Claude | 自动刷新控件升级为微型滑动开关（Toggle Switch）样式 |
 | 2026-08-18 10:45 | Claude | 去除自动刷新控件外层边框与背景，优化视觉布局 |
 | 2026-08-18 11:00 | Claude | 彻底修复多工具调用流式跨分块 thought_signature 丢失问题（单轮连续工具调用全量通过） |
+| 2026-09-28 07:42 | Codex | 记录 Codex Desktop 模型缓存同步移植至 Fork `main`、服务 checkout 同步与 LaunchAgent 重启验证；列明上游 PR 和未完成验证 |
 
 ---
 
@@ -233,3 +248,40 @@
   2. **启动配额预热**: `src/server/index.ts` 在服务启动时异步并发探测所有 Antigravity 账号的初始配额，确保多账号池在收到首个请求时已有真实配额打分，避免冷启动时内存缓存为空导致 80% 阈值路由失效。
   3. **长历史签名防护**: `src/adapters/google.ts` 在 `buildRequest` 阶段对 `applyAntigravityReplay` 进行容错拦截。若某一轮存在部分函数调用由于超出 256 LRU 淘汰导致签名缺失，则剥离该轮全部签名，避免产生部分有签名、部分缺签名触发的上游 `400: Function call is missing a thought_signature` 报错。
   4. **非流式 400 Clear-on-Invalid 对称处理**: `src/adapters/google.ts` 的 `parseResponse` 增加对 400 签名错误的重放缓存清理机制，与流式路径保持对称。
+
+---
+
+## 8. Codex Desktop 模型缓存持续同步 (2026-09-28)
+
+### 8.1 实施与交付
+
+- `src/codex/catalog/watch.ts` 监听当前 Codex Home 下的 `models_cache.json`，以 debounce 方式检查新出现的账号原生模型，并调用现有 Codex 启动同步流程。
+- 仅在 Codex 集成已运行且没有外部 Codex 模型 provider 时启动 watcher；目录同步仍按账号 selector 隔离，过滤 OpenCodex 自身 `client_version: "0.0.0"` 的缓存失效写入，退出时停止 watcher。
+- Fork `main` 提交：`dd52011cd`（功能移植），`23101efad`（清除重复 watcher stop 调用）。远端 `origin/main` 指向 `23101efad`。
+- 服务 checkout 本地合并提交：`7b8270fa6`；保留了本地文档规划提交 `88d0ec4e4`，未推送此本地合并提交。
+
+### 8.2 验证与待办
+
+- `bun install --frozen-lockfile`：通过；`bun run typecheck`：通过（在独立 Fork-main 移植 worktree 中，重复 stop 清理前）。
+- `git diff --check`：通过。回归测试已添加至 `tests/codex-desktop-model-cache-sync.test.ts`，尚未运行；docs-site build 尚未验证。
+- 服务已重启；`/healthz` 返回 `status: ok`，PID `92918`，端口 `10100`。服务包版本仍为 `2.21.0`，本次只更新了功能代码。
+- 上游 PR #6143 仍为 Draft/Open，目标 `lidge-jun/opencodex:dev`；功能进入个人 Fork `main` 不代表已进入上游。
+- Antigravity ledger 分支仍在独立 worktree，工作区包含未提交修改，不在本次集成范围内。
+
+---
+
+## 9. Antigravity thought-signature 跨请求持久化 (2026-09-28)
+
+### 9.1 修复内容
+
+- fork `main` 已包含 opaque provider metadata 的 Responses 往返与已有 Antigravity replay cache；本次没有重复搬运这些现存改动。
+- 新增有界的一小时签名 ledger，以 route/project/account/wire-model/conversation scope 加精确 Responses `call_id` 索引；不以工具参数或名称猜测关联。
+- 完成或可续接的 Responses 输出保存签名；后续历史请求只对完全匹配且缺签名的工具调用恢复。快照只存哈希索引与 provider 签名，加入 TTL、数量/字节限制、内存预算回收、状态清扫、关机 flush 与卸载所有权清单。
+- Provider 管理校验测试使用按伪域名显式 allowlist 的 resolver spy，避免机器 DNS/代理环境让测试夹具漂移，同时保留同步目的地安全检查。
+
+### 9.2 验证与交付
+
+- Fork 基线：`origin/main` `23101efad`；目标分支：`codex/antigravity-signature-ledger-fork-main`。
+- `bun install`、`bun run typecheck`、五个相关测试文件、`git diff --check` 均通过；完整 `bun run test` 在多处非本次改动的 E2E 超时/重试断言差异后中止，不能视为全量通过。
+- `bun run privacy:scan` 命中基线文件 `docs/gpt-6-astra-model-discovery-diagnosis.md:51` 的本机路径；该无关文档未修改。
+- Fork `main` 提交及服务重启 PID/健康状态待交付后补记。

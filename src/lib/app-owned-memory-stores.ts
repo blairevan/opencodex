@@ -46,6 +46,10 @@ import {
   evictOldestResponseContinuationForBudget,
   responseContinuationRetainedStoreSnapshot,
 } from "../responses/state";
+import {
+  evictOldestGoogleThoughtSignature,
+  googleThoughtSignatureLedgerSnapshot,
+} from "../responses/google-thought-signature-ledger";
 import { translatorObservedBufferSnapshot } from "./translator-budget";
 import { imageFulfillmentTailSnapshot } from "../images/fulfill";
 import { oauthMutationTailSnapshot } from "../oauth/store";
@@ -167,6 +171,12 @@ export const APP_OWNED_RETAINED_STORE_REGISTRATIONS = [
     category: "continuation",
     snapshot: responseContinuationRetainedStoreSnapshot,
     evictOldest: evictOldestResponseContinuationForBudget,
+  },
+  {
+    id: "google_thought_signature_ledger",
+    category: "continuation",
+    snapshot: googleThoughtSignatureLedgerSnapshot,
+    evictOldest: evictOldestGoogleThoughtSignature,
   },
 ] as const satisfies readonly RetainedStoreRegistration[];
 

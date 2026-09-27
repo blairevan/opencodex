@@ -1,5 +1,6 @@
 import { flushAntigravityReplay } from "../adapters/google-antigravity-replay";
 import { flushResponseState } from "../responses/state";
+import { flushGoogleThoughtSignatures } from "../responses/google-thought-signature-ledger";
 import { setStorageCleanupPolicyLiveSink } from "../storage/policy";
 import {
   abortStorageCleanupPolicyJobAsync,
@@ -438,12 +439,15 @@ export async function drainAndShutdown(
     // Debounced replay-state snapshots may still be pending; flush so the last completed turn's
     // previous_response_id chain and antigravity thought signatures survive the restart this
     // shutdown is usually part of.
-    const stateFlush = await Promise.allSettled([flushResponseState(), flushAntigravityReplay()]);
+    const stateFlush = await Promise.allSettled([flushResponseState(), flushAntigravityReplay(), flushGoogleThoughtSignatures()]);
     if (stateFlush[0]?.status === "rejected") {
       console.warn("[responses] state flush during shutdown failed");
     }
     if (stateFlush[1]?.status === "rejected") {
       console.warn("[antigravity] replay flush during shutdown failed");
+    }
+    if (stateFlush[2]?.status === "rejected") {
+      console.warn("[antigravity] thought-signature flush during shutdown failed");
     }
 
     // Tear down opt-in storage policy timers / worker / live-config sink so they cannot fire after stop.
