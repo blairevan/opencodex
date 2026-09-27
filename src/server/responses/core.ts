@@ -10,6 +10,13 @@ import {
 } from "../../config";
 import { parseRequest } from "../../responses/parser";
 import {
+  createGoogleThoughtSignatureScope,
+  rememberGoogleThoughtSignatures,
+  restoreGoogleThoughtSignatures,
+} from "../../responses/google-thought-signature-ledger";
+import { resolveAntigravityEffortWireModel } from "../../providers/antigravity-models";
+import { mapReasoningEffort } from "../../reasoning-effort";
+import {
   bindReasoningReplayScope,
   reasoningReplayCodexCredentialIdentity,
   reasoningReplayDestinationIdentity,
@@ -2120,6 +2127,35 @@ async function handleResponsesInner(
     delete logCtx.accountLogLabel;
   }
   const adapter = resolveAdapter(adapterProvider, config.cacheRetention);
+  const googleThoughtSignatureScope = adapter.name === "google"
+    && route.provider.googleMode === "cloud-code-assist"
+    ? createGoogleThoughtSignatureScope({
+      destination: route.provider.baseUrl,
+      project: route.provider.project ?? "",
+      account: antigravityPoolAccountId ?? replayOAuthCredentialSnapshot?.accountId ?? "",
+      wireModel: resolveAntigravityEffortWireModel(
+        parsed.modelId,
+        mapReasoningEffort(route.provider, parsed.modelId, parsed.options.reasoning),
+      ).wireModelId,
+      conversation: req.headers.get("x-codex-parent-thread-id")?.trim()
+        || sessionIdHeaderFromRequest(req.headers)?.trim()
+        || req.headers.get("thread-id")?.trim()
+        || "",
+    })
+    : undefined;
+  if (googleThoughtSignatureScope) restoreGoogleThoughtSignatures(googleThoughtSignatureScope, parsed.context.messages);
+  const rememberGoogleResponseSignatures = (response: Record<string, unknown>): void => {
+    if (!googleThoughtSignatureScope || !Array.isArray(response.output)) return;
+    if (response.status === "completed") {
+      rememberGoogleThoughtSignatures(googleThoughtSignatureScope, response.output);
+      return;
+    }
+    const details = response.incomplete_details;
+    if (response.status === "incomplete" && details && typeof details === "object"
+      && !Array.isArray(details) && (details as { reason?: unknown }).reason === "max_output_tokens") {
+      rememberGoogleThoughtSignatures(googleThoughtSignatureScope, response.output);
+    }
+  };
   bindRouteReasoningReplayScope({
     parsed,
     providerName: route.providerName,
@@ -3139,13 +3175,15 @@ async function handleResponsesInner(
       retryOn429Policy: rateLimitRetryPolicyFor(route.provider),
       ...(options.onFirstOutput ? { onFirstOutput: options.onFirstOutput } : {}),
       ...(options.forceEmptyResponseId ? { forceEmptyResponseId: true } : {}),
-      onCompletedResponse: (response, providerState) =>
+      onCompletedResponse: (response, providerState) => {
+        rememberGoogleResponseSignatures(response);
         rememberResponseState(
           parsed._rawBody,
           response,
           continuationStateForResponse(providerState),
           responseStateOptions(adapterNeedsForcedContinuation(adapter.name)),
-        ),
+        );
+      },
     });
     if (imgResponse.body) {
       const imgTurnAc = new AbortController();
@@ -3359,13 +3397,15 @@ async function handleResponsesInner(
             }
           },
           ...(routedCompaction ? {} : {
-            onCompletedResponse: (response: Record<string, unknown>, providerState?: OcxProviderContinuationState) =>
+            onCompletedResponse: (response: Record<string, unknown>, providerState?: OcxProviderContinuationState) => {
+              rememberGoogleResponseSignatures(response);
               rememberResponseState(
                 parsed._rawBody,
                 response,
                 continuationStateForResponse(providerState),
                 responseStateOptions(adapterNeedsForcedContinuation(adapter.name)),
-              ),
+              );
+            },
           }),
         },
       );
@@ -3418,6 +3458,7 @@ async function handleResponsesInner(
       },
     });
     if (!routedCompaction) {
+      rememberGoogleResponseSignatures(json);
       rememberResponseState(
         parsed._rawBody,
         json,
@@ -4237,13 +4278,15 @@ async function handleResponsesInner(
         // PRE-compaction history, and a later previous_response_id expansion would rehydrate the
         // giant stale chain Codex just replaced.
         ...(routedCompaction ? {} : {
-          onCompletedResponse: (response: Record<string, unknown>, providerState?: OcxProviderContinuationState) =>
+          onCompletedResponse: (response: Record<string, unknown>, providerState?: OcxProviderContinuationState) => {
+            rememberGoogleResponseSignatures(response);
             rememberResponseState(
               parsed._rawBody,
               response,
               continuationStateForResponse(providerState),
               responseStateOptions(activeAdapter.name === "kiro"),
-            ),
+            );
+          },
         }),
       },
     );
@@ -4306,6 +4349,7 @@ async function handleResponsesInner(
     });
     // See the streaming branch: compaction turns skip the continuation cache.
     if (!routedCompaction) {
+      rememberGoogleResponseSignatures(json);
       rememberResponseState(
         parsed._rawBody,
         json,

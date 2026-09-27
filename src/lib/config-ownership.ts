@@ -64,6 +64,7 @@ const INITIAL_OWNED_PATHS = [
   "opencodex-tray-warning.ico",
   "opencodex-tray.ps1",
   "responses-state.json",
+  "google-thought-signatures.json",
   "runtime-port.json",
   "service-api-token",
   "service-state.json",
