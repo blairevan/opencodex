@@ -55,6 +55,7 @@ import { maybeShowStarPrompt } from "./star-prompt";
 import { scheduleCatalogPrewarm } from "./catalog-prewarm";
 import { maybeShowUpdatePrompt } from "../update/notify";
 import { syncModelsToCodex } from "../codex/sync";
+import { startCodexDesktopModelCacheWatcher } from "../codex/catalog/watch";
 import { setIntegrationEnabled, shouldSyncCodexOnStart, shouldSyncGrokOnStart, syncCodexOnStartIfEnabled } from "../codex/desired-state";
 
 
@@ -290,6 +291,7 @@ async function handleStart(options: { block?: boolean } = {}) {
   // background — the first `ocx start` after an update usually races the Codex app's DB lock.
   // Loopback-only (legacy mode still forward-tags) and respects syncResumeHistory opt-out.
   let historyGuardian: ReturnType<typeof startHistoryMigrationGuardian> | undefined;
+  let modelCacheWatcher: ReturnType<typeof startCodexDesktopModelCacheWatcher> | null = null;
 
   let cleaned = false;
   let cleanupSucceeded = true;
@@ -298,6 +300,7 @@ async function handleStart(options: { block?: boolean } = {}) {
     cleaned = true;
     try { guardian.stop(); } catch { /* best-effort */ }
     try { historyGuardian?.stop(); } catch { /* best-effort */ }
+    try { modelCacheWatcher?.stop(); } catch { /* best-effort */ }
     // Dashboard drain-and-restart (#563) must not tear down injection: the replacement
     // process expects Codex/Grok/env fences to still be in place.
     const recycling = isRecyclingForExit();
@@ -378,6 +381,11 @@ async function handleStart(options: { block?: boolean } = {}) {
   // half-synced proxy as ready while /healthz stays live.
   const startupSync = await syncCodexOnStartIfEnabled(port, config, undefined, readinessGate);
   if (!startupSync.ran) console.log("   Codex integration OFF; startup left Codex native.");
+  if (startupSync.ran && !currentExternalCodexModelProvider()) {
+    modelCacheWatcher = startCodexDesktopModelCacheWatcher(
+      () => syncCodexOnStartIfEnabled(port, loadConfig()),
+    );
+  }
   // #1046: one warning per startup, after BOTH writes. The server's cache
   // invalidation happens first and the catalog sync second, so the mtime is only
   // final here — and neither write site warns on its own, or a boot that hits
