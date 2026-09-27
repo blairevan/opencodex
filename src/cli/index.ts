@@ -301,7 +301,6 @@ async function handleStart(options: { block?: boolean } = {}) {
     try { guardian.stop(); } catch { /* best-effort */ }
     try { historyGuardian?.stop(); } catch { /* best-effort */ }
     try { modelCacheWatcher?.stop(); } catch { /* best-effort */ }
-    try { modelCacheWatcher?.stop(); } catch { /* best-effort */ }
     // Dashboard drain-and-restart (#563) must not tear down injection: the replacement
     // process expects Codex/Grok/env fences to still be in place.
     const recycling = isRecyclingForExit();
