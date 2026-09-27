@@ -130,6 +130,7 @@ import {
   StartOwnershipRollbackUncertainError,
 } from "./start-ownership-publication";
 import { syncModelsToCodex } from "../codex/sync";
+import { startCodexDesktopModelCacheWatcher } from "../codex/catalog/watch";
 import { localClientSkipReason, shouldSyncGrokOnStart, syncCodexOnStartIfEnabled } from "../codex/desired-state";
 import { honorSiblingMarker, markSiblingStart, siblingOfLivePort, siblingRuntimeField, siblingStopFoundOwner, withoutSiblingMarker } from "../codex/sibling-start";
 import { consumeSiblingHandoff } from "../codex/sibling-handoff";
@@ -571,6 +572,7 @@ async function handleStart(options: { block?: boolean } = {}) {
   // Loopback-only (legacy mode still forward-tags) and respects syncResumeHistory opt-out.
   let historyGuardian: ReturnType<typeof startHistoryMigrationGuardian> | undefined;
   let routingHealer: { stop(): void } | undefined; // routing-healer.ts; stopped first in syncCleanup
+  let modelCacheWatcher: ReturnType<typeof startCodexDesktopModelCacheWatcher> | null = null;
 
   let cleaned = false;
   let cleanupSucceeded = true;
@@ -580,6 +582,7 @@ async function handleStart(options: { block?: boolean } = {}) {
     try { routingHealer?.stop(); } catch { /* best-effort */ }
     try { guardian.stop(); } catch { /* best-effort */ }
     try { historyGuardian?.stop(); } catch { /* best-effort */ }
+    try { modelCacheWatcher?.stop(); } catch { /* best-effort */ }
     // Dashboard drain-and-restart (#563) must not tear down injection: the replacement
     // process expects Codex/Grok/env fences to still be in place. A sibling owns none of them.
     const teardown = decideStartExitTeardown({ sibling: siblingStart, recycling: isRecyclingForExit(), ocxService: process.env.OCX_SERVICE });
@@ -690,6 +693,11 @@ async function handleStart(options: { block?: boolean } = {}) {
     },
   );
   if (!startupSync.ran) console.log(startupLeftCodexNativeLine(localClientSkipReason(config), server.port ?? port));
+  if (startupSync.ran && !siblingStart && !currentExternalCodexModelProvider()) {
+    modelCacheWatcher = startCodexDesktopModelCacheWatcher(
+      () => syncCodexOnStartIfEnabled(port, loadConfig()),
+    );
+  }
   await refreshOwnedRaycastCatalog(config, port);
   // #1046: one warning per startup, after BOTH writes. The server's cache
   // invalidation happens first and the catalog sync second, so the mtime is only
