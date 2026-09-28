@@ -8,18 +8,18 @@
 
 **当前事项**: 将 Antigravity thought-signature 跨请求恢复补强合入个人 Fork `main`，并重启本机 OpenCodex 服务。
 
-**个人 Fork**: `blairevan/opencodex:main` 基线为 `23101efad`；当前功能尚在交付分支，完成后记录实际合入提交。Fork `main` 保持 v2.21.0 版本元数据；本次没有将上游数千个提交合入。
+**个人 Fork**: `blairevan/opencodex:main` 已合入提交 `076870a73`（`fix(antigravity): persist thought signatures across history`）。Fork `main` 保持 v2.21.0 版本元数据；本次没有将上游数千个提交合入。
 
-**服务 checkout**: `/opt/app/aitools/opencodex` 的本地 `main` 在 `7b8270fa6`，合入远端 Fork `main` 并保留本地文档规划提交 `88d0ec4e4`；工作区干净。
+**服务 checkout**: `/opt/app/aitools/opencodex` 的本地 `main` 在 `395197ccf`，包含 fork `main` 合入及本地文档规划提交 `88d0ec4e4`；工作区干净。
 
-**运行服务**: LaunchAgent `com.opencodex.proxy`，端口 `10100`。2026-09-28 07:42 检查 PID `92918`，`/healthz` 返回 `status: ok`、版本 `2.21.0`。启动路径指向上述源码 checkout。
+**运行服务**: LaunchAgent `com.opencodex.proxy`，端口 `10100`。2026-09-28 08:00 重启后 PID `26932`，`/healthz` 返回 `status: ok`、版本 `2.21.0`。启动路径指向上述源码 checkout。
 
 **上游关系**: PR [#6143](https://github.com/lidge-jun/opencodex/pull/6143) 仍为 Draft/Open，来源 `codex/model-catalog-sync`，目标上游 `dev`；Fork `main` 的兼容移植不会自动更新该 PR。
 
 **相关分支**:
 - Fork `codex/integration` / `origin/codex/integration`: `2a8f4eff3`，包含模型同步功能。
 - Fork `codex/model-catalog-sync` 是 PR #6143 的来源分支；本地旧分支 `codex/model-catalog-sync-current` 已删除。
-- Antigravity thought-signature ledger 已从错误的上游 `dev` 开发基线迁移并适配 Fork `main`，当前在 `codex/antigravity-signature-ledger-fork-main`。
+- Antigravity thought-signature ledger 已从错误的上游 `dev` 开发基线迁移并适配 Fork `main`，已合入提交 `076870a73`。
 
 ---
 
@@ -135,9 +135,9 @@
 | Node | v22.16.0 (nvm) |
 | 运行时 | Bun (bundled) |
 | opencodex 版本 | v2.21.0（`/healthz` 与 Fork `main` 元数据） |
-| Fork `main` | `23101efad` |
-| 服务 checkout 分支 | 本地 `main` @ `7b8270fa6`，包含 Fork `main` 与本地文档提交 |
-| 服务 | LaunchAgent `com.opencodex.proxy`，PID `92918`，端口 `10100`（2026-09-28 07:42 检查） |
+| Fork `main` | `076870a73`（thought-signature 跨请求持久化）|
+| 服务 checkout 分支 | 本地 `main` @ `395197ccf`，包含 Fork `main` 及本地文档提交 `88d0ec4e4`、`4ed1d9310` |
+| 服务 | LaunchAgent `com.opencodex.proxy`，PID `26932`，端口 `10100`（2026-09-28 08:00 检查） |
 
 ---
 
@@ -159,6 +159,7 @@
 | 2026-08-18 10:45 | Claude | 去除自动刷新控件外层边框与背景，优化视觉布局 |
 | 2026-08-18 11:00 | Claude | 彻底修复多工具调用流式跨分块 thought_signature 丢失问题（单轮连续工具调用全量通过） |
 | 2026-09-28 07:42 | Codex | 记录 Codex Desktop 模型缓存同步移植至 Fork `main`、服务 checkout 同步与 LaunchAgent 重启验证；列明上游 PR 和未完成验证 |
+| 2026-09-28 08:00 | Codex | 将 Antigravity thought-signature ledger 快进合入 Fork `main`，同步服务 checkout 并重启 LaunchAgent；验证 PID `26932`、端口 `10100` 与 `/healthz` |
 
 ---
 
@@ -281,7 +282,12 @@
 
 ### 9.2 验证与交付
 
-- Fork 基线：`origin/main` `23101efad`；目标分支：`codex/antigravity-signature-ledger-fork-main`。
+- Fork 基线：`origin/main` `23101efad`；交付分支：`codex/antigravity-signature-ledger-fork-main`；Fork `main` 合入：`076870a73`。
 - `bun install`、`bun run typecheck`、五个相关测试文件、`git diff --check` 均通过；完整 `bun run test` 在多处非本次改动的 E2E 超时/重试断言差异后中止，不能视为全量通过。
 - `bun run privacy:scan` 命中基线文件 `docs/gpt-6-astra-model-discovery-diagnosis.md:51` 的本机路径；该无关文档未修改。
-- Fork `main` 提交及服务重启 PID/健康状态待交付后补记。
+- Fork `main` 已推送 `076870a73`。服务 checkout 本地合并提交 `395197ccf`，工作区干净。
+- LaunchAgent `com.opencodex.proxy` 已于 2026-09-28 08:00 重启：PID `26932` 正监听 `127.0.0.1:10100`，`/healthz` 为 `status: ok`、版本 `2.21.0`。启动日志同时记录了 Google 已退役 Flash 模型 ID 的配置迁移到 successor `gemini-3.7-flash`。
+
+### 9.3 修订记录
+
+- 2026-09-28 08:00 CST：将签名 ledger 修复快进推送到个人 Fork `main`，同步服务 checkout、重启 LaunchAgent，并验证监听 PID 与健康接口。
