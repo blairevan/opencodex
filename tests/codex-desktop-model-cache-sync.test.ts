@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { codexDesktopNativeModelsNeedSync } from "../src/codex/catalog";
+import { codexDesktopNativeModelsNeedSync, nativeOpenAiSlugs } from "../src/codex/catalog";
 import { desktopNativeModelRows, projectDesktopNativeModelRow } from "../src/codex/catalog/desktop-native-cache";
 import type { OcxConfig } from "../src/types";
 import { installIsolatedCodexHome } from "./helpers/isolated-codex-home";
@@ -99,6 +99,7 @@ describe("Codex Desktop model cache sync detection", () => {
       expect(projected?.model_messages).toEqual(template.model_messages);
       expect(JSON.stringify(projected)).not.toContain("Do not copy this cache prompt.");
       writeFileSync(catalogPath, JSON.stringify({ models: [projected] }), "utf8");
+      expect(nativeOpenAiSlugs()).toContain("gpt-6-sol");
       expect(codexDesktopNativeModelsNeedSync(makeConfig({ codexAccountPickerEnabled: false }))).toBe(false);
 
       const updated = { ...observed, default_reasoning_level: "high" };

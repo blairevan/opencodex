@@ -538,6 +538,10 @@ export function codexDesktopNativeModelsNeedSync(
 function catalogNativeSlugs(): string[] {
   const cat = readCurrentCatalogOrCache();
   const models = cat?.models ?? [];
+  // The bundled catalog is the static metadata authority on the default path, but it can lag the
+  // user's catalog after Desktop publishes a newly available native model. Carry only rows that
+  // our sync path explicitly projected from that Desktop cache into the live model list.
+  const projectedDesktopModels = readCurrentCodexCatalog()?.models ?? [];
   const live = models.flatMap(entry => {
     const slug = typeof entry.slug === "string" ? entry.slug : "";
     return !slug.includes("/")
@@ -545,6 +549,10 @@ function catalogNativeSlugs(): string[] {
       ? [slug]
       : [];
   });
+  const desktopProjected = projectedDesktopModels.flatMap(entry =>
+    isDesktopNativeCatalogRow(entry) && typeof entry.slug === "string" && !entry.slug.includes("/")
+      ? [entry.slug]
+      : []);
   const accountBound = models.flatMap(entry => {
     const slug = trustedAccountBoundNativeCatalogSlug(entry);
     return slug !== undefined && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isAccountBoundOpenAiNativeSlug(slug)) ? [slug] : [];
@@ -552,7 +560,7 @@ function catalogNativeSlugs(): string[] {
   // Deliberately ignore `visibility`: it is a rendered projection of disabledModels and account
   // selectors, so treating it as fresh availability would shrink the supported set between syncs.
   // visibleNativeSlugs applies the current disabledModels source of truth for public consumers.
-  return unique([...live, ...accountBound]);
+  return unique([...live, ...desktopProjected, ...accountBound]);
 }
 
 export function listCatalogNativeSlugs(): string[] {
