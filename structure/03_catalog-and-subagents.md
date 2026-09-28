@@ -41,7 +41,10 @@ The sync path reconciles visible, API-supported native rows from Codex Desktop's
 `models_cache.json` into the bare native catalog. It validates the current cache row shape, mirrors
 only identity and capability fields, and keeps the cache's prompt/instruction payload out of the
 generated catalog. A content fingerprint makes additions, removals, and capability updates trigger
-the same watcher path; absent cache rows remove only entries marked as Desktop-projected.
+the same watcher path. Only a versioned Desktop snapshot is authoritative for removals; a missing
+cache or OpenCodex's `client_version: "0.0.0"` invalidation sentinel preserves existing projected
+rows until Desktop refreshes its cache. This prevents startup from mistaking its own invalidation
+write for an empty Desktop catalog.
 
 When account selectors are enabled, the sync path may also observe exact, visible, API-supported
 OpenAI-family ids from Codex's user-owned catalog/cache. Those unknown account-scoped ids retain

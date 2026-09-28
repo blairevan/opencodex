@@ -1371,7 +1371,10 @@ function writeRetainedCatalogSync({
 }: RetainedCatalogSyncWrite): RetainedCatalogSyncResult {
   const { catalogPath, catalog, onDiskCatalog } = read;
   const nativeTemplate = findNativeTemplate(catalog);
-  const desktopRows = read.modelsCache?.client_version === "0.0.0"
+  const hasAuthoritativeDesktopCache = typeof read.modelsCache?.client_version === "string"
+    && read.modelsCache.client_version.trim().length > 0
+    && read.modelsCache.client_version !== "0.0.0";
+  const desktopRows = !hasAuthoritativeDesktopCache
     ? []
     : desktopNativeModelRows(read.modelsCache?.models ?? []).filter(row =>
       typeof row.slug === "string" && !SUPPORTED_NATIVE_OPENAI_SLUGS.has(row.slug));
@@ -1385,12 +1388,15 @@ function writeRetainedCatalogSync({
   const currentDesktopSlugs = new Set(desktopNativeSlugs);
   const catalogModelsForMerge = [
     ...priorModels.filter(entry => !isDesktopNativeCatalogRow(entry)
+      || !hasAuthoritativeDesktopCache
       || (typeof entry.slug === "string" && currentDesktopSlugs.has(entry.slug))),
     ...desktopRows.flatMap(entry => {
       const projected = projectDesktopNativeModelRow(nativeTemplate, entry);
       return projected ? [projected] : [];
     }),
   ];
+  const retainedDesktopSlugs = catalogModelsForMerge.flatMap(entry =>
+    isDesktopNativeCatalogRow(entry) && typeof entry.slug === "string" ? [entry.slug] : []);
   const template = nativeTemplate;
 
   try {
@@ -1529,8 +1535,8 @@ function writeRetainedCatalogSync({
     openaiContextCap,
     policy: {
       ...CANONICAL_NATIVE_CATALOG_CONTENT_POLICY,
-      nativeBackfillSlugs: [...NATIVE_OPENAI_MODELS, ...observedNativeSlugs, ...desktopNativeSlugs],
-      desktopNativeSlugs,
+      nativeBackfillSlugs: [...NATIVE_OPENAI_MODELS, ...observedNativeSlugs, ...retainedDesktopSlugs],
+      desktopNativeSlugs: retainedDesktopSlugs,
       warningPolicy: "emit",
     },
   });
