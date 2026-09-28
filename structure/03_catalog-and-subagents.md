@@ -50,9 +50,11 @@ observations, and are emitted only as selector-qualified rows whose account prov
 They never expand the bare native or API-key model list. This keeps account-scoped upstream ids
 such as `gpt-daybreak-blue-latest` callable without treating them as a global Desktop release.
 
-The app-server's model list comes from this shared catalog, not from patching the App. Codex Desktop
-may still apply its remote native-only allowlist after `model/list`; an explicitly configured combo
-`nativeAlias` is the bounded compatibility path. It replaces one supported bare native row with a
+The app-server's model list comes from this shared catalog, not from patching the App. On the default
+catalog path, the bundled catalog supplies static native metadata, while explicitly marked
+Desktop-projected rows from the user's catalog are also included in the live native slug set. Codex
+Desktop may still apply its remote native-only allowlist after `model/list`; an explicitly configured
+combo `nativeAlias` is the bounded compatibility path. It replaces one supported bare native row with a
 routed, labeled row, routes the bare id before canonical OpenAI, and keeps account-qualified native
 selectors genuine. Missing target discovery capabilities inherit the replaced native row's metadata,
 while explicit target limits remain authoritative. Because the affected renderer ignores `visibility: "hide"`, the presence of any
