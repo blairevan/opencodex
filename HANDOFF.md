@@ -8,9 +8,9 @@
 
 **当前事项**: 将 Antigravity thought-signature 跨请求恢复补强合入个人 Fork `main`，并重启本机 OpenCodex 服务。
 
-**个人 Fork**: `blairevan/opencodex:main` 已合入提交 `076870a73`（`fix(antigravity): persist thought signatures across history`）。Fork `main` 保持 v2.21.0 版本元数据；本次没有将上游数千个提交合入。
+**个人 Fork**: `blairevan/opencodex:main` 当前为 `e9ca6d6c2`；代码修复提交为 `076870a73`，随后提交交接记录。Fork `main` 保持 v2.21.0 版本元数据；本次没有将上游数千个提交合入。
 
-**服务 checkout**: `/opt/app/aitools/opencodex` 的本地 `main` 在 `395197ccf`，包含 fork `main` 合入及本地文档规划提交 `88d0ec4e4`；工作区干净。
+**服务 checkout**: `/opt/app/aitools/opencodex` 的本地 `main` 包含源码合并提交 `395197ccf`，以及本地文档规划/交接记录提交；工作区干净。
 
 **运行服务**: LaunchAgent `com.opencodex.proxy`，端口 `10100`。2026-09-28 08:00 重启后 PID `26932`，`/healthz` 返回 `status: ok`、版本 `2.21.0`。启动路径指向上述源码 checkout。
 
@@ -135,8 +135,8 @@
 | Node | v22.16.0 (nvm) |
 | 运行时 | Bun (bundled) |
 | opencodex 版本 | v2.21.0（`/healthz` 与 Fork `main` 元数据） |
-| Fork `main` | `076870a73`（thought-signature 跨请求持久化）|
-| 服务 checkout 分支 | 本地 `main` @ `395197ccf`，包含 Fork `main` 及本地文档提交 `88d0ec4e4`、`4ed1d9310` |
+| Fork `main` | `e9ca6d6c2`（含 thought-signature 修复 `076870a73`）|
+| 服务 checkout 分支 | 本地 `main`，源码合并提交 `395197ccf`，另含本地文档规划/交接提交；工作区干净 |
 | 服务 | LaunchAgent `com.opencodex.proxy`，PID `26932`，端口 `10100`（2026-09-28 08:00 检查） |
 
 ---
@@ -159,7 +159,7 @@
 | 2026-08-18 10:45 | Claude | 去除自动刷新控件外层边框与背景，优化视觉布局 |
 | 2026-08-18 11:00 | Claude | 彻底修复多工具调用流式跨分块 thought_signature 丢失问题（单轮连续工具调用全量通过） |
 | 2026-09-28 07:42 | Codex | 记录 Codex Desktop 模型缓存同步移植至 Fork `main`、服务 checkout 同步与 LaunchAgent 重启验证；列明上游 PR 和未完成验证 |
-| 2026-09-28 08:00 | Codex | 将 Antigravity thought-signature ledger 快进合入 Fork `main`，同步服务 checkout 并重启 LaunchAgent；验证 PID `26932`、端口 `10100` 与 `/healthz` |
+| 2026-09-28 08:00 | Codex | 将 Antigravity thought-signature ledger（`076870a73`）及部署交接记录（`e9ca6d6c2`）快进合入 Fork `main`，同步服务 checkout 并重启；验证 PID `26932`、端口 `10100` 与 `/healthz` |
 
 ---
 
@@ -285,7 +285,7 @@
 - Fork 基线：`origin/main` `23101efad`；交付分支：`codex/antigravity-signature-ledger-fork-main`；Fork `main` 合入：`076870a73`。
 - `bun install`、`bun run typecheck`、五个相关测试文件、`git diff --check` 均通过；完整 `bun run test` 在多处非本次改动的 E2E 超时/重试断言差异后中止，不能视为全量通过。
 - `bun run privacy:scan` 命中基线文件 `docs/gpt-6-astra-model-discovery-diagnosis.md:51` 的本机路径；该无关文档未修改。
-- Fork `main` 已推送 `076870a73`。服务 checkout 本地合并提交 `395197ccf`，工作区干净。
+- Fork `main` 当前为 `e9ca6d6c2`；代码提交 `076870a73`，部署交接文档提交 `e9ca6d6c2`。服务 checkout 本地合并提交 `395197ccf`，工作区干净；该 checkout 还保留本地规划/交接文档提交。
 - LaunchAgent `com.opencodex.proxy` 已于 2026-09-28 08:00 重启：PID `26932` 正监听 `127.0.0.1:10100`，`/healthz` 为 `status: ok`、版本 `2.21.0`。启动日志同时记录了 Google 已退役 Flash 模型 ID 的配置迁移到 successor `gemini-3.7-flash`。
 
 ### 9.3 修订记录
