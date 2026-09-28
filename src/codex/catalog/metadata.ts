@@ -36,6 +36,7 @@ import upstreamModelsSnapshot from "../data/upstream-models.json";
 import type { RawEntry } from "./parsing";
 import { readCurrentCatalogOrCache, readCurrentCodexCatalog, readCurrentCodexModelsCache, unique } from "./bundled";
 import { trustedAccountBoundNativeCatalogSlug, visibleCodexAccountSelectors } from "./account-models";
+import { desktopNativeModelRows, desktopNativeRowMatchesCache, isDesktopNativeCatalogRow } from "./desktop-native-cache";
 import { CODEX_NATIVE_ALIAS_CATALOG_KIND } from "./kinds";
 import {
   NATIVE_DAYBREAK_BLUE_MODEL,
@@ -256,8 +257,19 @@ export function nativeModelRows(config: Pick<OcxConfig, "disabledModels" | "comb
   const disabled = disabledNativeSlugs(config);
   const shadowed = configuredNativeAliasSlugs(config);
   const openaiContextCap = providerContextCap(config, OPENAI_CODEX_PROVIDER_ID);
-  return NATIVE_OPENAI_MODELS.filter(slug => !shadowed.has(slug)).map(slug => {
-    const contextWindow = nativeOpenAiContextWindow(slug, openaiContextCap);
+  const dynamicRows = (readCurrentCodexCatalog()?.models ?? []).filter(isDesktopNativeCatalogRow);
+  const dynamicContextWindows = new Map(dynamicRows.flatMap(row =>
+    typeof row.slug === "string" && typeof row.context_window === "number"
+      ? [[row.slug, row.context_window] as const]
+      : []));
+  const slugs = unique([...NATIVE_OPENAI_MODELS, ...dynamicRows.flatMap(row =>
+    typeof row.slug === "string" ? [row.slug] : [])]);
+  return slugs.filter(slug => !shadowed.has(slug)).map(slug => {
+    const desktopContext = dynamicContextWindows.get(slug);
+    const contextWindow = nativeOpenAiContextWindow(slug, openaiContextCap)
+      ?? (desktopContext === undefined
+        ? undefined
+        : applyProviderContextCap(desktopContext, openaiContextCap) ?? desktopContext);
     return { slug, disabled: disabled.has(slug), ...(contextWindow !== undefined ? { contextWindow } : {}) };
   });
 }
@@ -275,7 +287,9 @@ export function applyNativeVisibility(
     const nativeSlug = accountBoundSlug ?? slug;
     if (!nativeSlug
       || (!accountBoundSlug && slug.includes("/"))
-      || (!SUPPORTED_NATIVE_OPENAI_SLUGS.has(nativeSlug) && !observedNativeSlugs.has(nativeSlug))) continue;
+      || (!SUPPORTED_NATIVE_OPENAI_SLUGS.has(nativeSlug)
+        && !observedNativeSlugs.has(nativeSlug)
+        && !isDesktopNativeCatalogRow(entry))) continue;
     const disabled = disabledModels.has(nativeSlug)
       || (accountBoundSlug !== undefined && disabledModels.has(slug));
     entry.visibility = disabled || (!accountBoundSlug && hideBareNative)
@@ -490,14 +504,27 @@ export function observedAccountBoundNativeOpenAiSlugs(
 export function codexDesktopNativeModelsNeedSync(
   config: Pick<OcxConfig, "codexAccounts" | "codexAccountNamespaces" | "codexAccountPickerEnabled">,
 ): boolean {
-  if (visibleCodexAccountSelectors(config).length === 0) return false;
   const cache = readCurrentCodexModelsCache();
   if (!cache || cache.client_version === "0.0.0") return false;
+  const catalog = readCurrentCodexCatalog();
+  const catalogModels = catalog?.models ?? [];
+  const desktopRows = desktopNativeModelRows(cache.models ?? []).filter(row =>
+    typeof row.slug === "string" && !SUPPORTED_NATIVE_OPENAI_SLUGS.has(row.slug));
+  const projectedRows = catalogModels.filter(isDesktopNativeCatalogRow);
+  const projectedBySlug = new Map(projectedRows.flatMap(entry =>
+    typeof entry.slug === "string" ? [[entry.slug, entry] as const] : []));
+  if (desktopRows.some(row => {
+    const projected = typeof row.slug === "string" ? projectedBySlug.get(row.slug) : undefined;
+    return projected === undefined || !desktopNativeRowMatchesCache(projected, row);
+  })) return true;
+  const desiredDesktopSlugs = new Set(desktopRows.flatMap(row =>
+    typeof row.slug === "string" ? [row.slug] : []));
+  if (projectedRows.some(row => typeof row.slug === "string" && !desiredDesktopSlugs.has(row.slug))) return true;
+
+  if (visibleCodexAccountSelectors(config).length === 0) return false;
   const observed = observedAccountBoundNativeEntries(cache.models ?? []);
   if (observed.length === 0) return false;
-
-  const catalog = readCurrentCodexCatalog();
-  const knownSlugs = new Set((catalog?.models ?? []).flatMap(entry => {
+  const knownSlugs = new Set(catalogModels.flatMap(entry => {
     const slug = trustedAccountBoundNativeCatalogSlug(entry)
       ?? (typeof entry.slug === "string" && !entry.slug.includes("/") ? entry.slug : undefined);
     return slug === undefined ? [] : [slug];
@@ -513,7 +540,10 @@ function catalogNativeSlugs(): string[] {
   const models = cat?.models ?? [];
   const live = models.flatMap(entry => {
     const slug = typeof entry.slug === "string" ? entry.slug : "";
-    return !slug.includes("/") && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isAccountBoundOpenAiNativeSlug(slug)) ? [slug] : [];
+    return !slug.includes("/")
+      && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isAccountBoundOpenAiNativeSlug(slug) || isDesktopNativeCatalogRow(entry))
+      ? [slug]
+      : [];
   });
   const accountBound = models.flatMap(entry => {
     const slug = trustedAccountBoundNativeCatalogSlug(entry);

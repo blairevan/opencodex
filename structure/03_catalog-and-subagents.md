@@ -37,12 +37,18 @@ custom catalog remains the native metadata/template authority even when a bundle
 warm. Both paths may use an admitted matching bundled memo only as installed-runtime capability
 evidence to remove unsupported reasoning efforts; convergence never probes Codex itself.
 
+The sync path reconciles visible, API-supported native rows from Codex Desktop's
+`models_cache.json` into the bare native catalog. It validates the current cache row shape, mirrors
+only identity and capability fields, and keeps the cache's prompt/instruction payload out of the
+generated catalog. A content fingerprint makes additions, removals, and capability updates trigger
+the same watcher path; absent cache rows remove only entries marked as Desktop-projected.
+
 When account selectors are enabled, the sync path may also observe exact, visible, API-supported
-OpenAI-family ids from Codex's user-owned catalog/cache. Only rows with native catalog provenance
-are trusted; unknown ids are carried through startup cache invalidation as hidden observations and
-are emitted only as selector-qualified rows whose account provenance matches. They never expand
-the bare native or API-key model list. This keeps account-scoped upstream ids such as
-`gpt-daybreak-blue-latest` callable without treating them as a static release allowlist.
+OpenAI-family ids from Codex's user-owned catalog/cache. Those unknown account-scoped ids retain
+the stricter native-row shape check, are carried through startup cache invalidation as hidden
+observations, and are emitted only as selector-qualified rows whose account provenance matches.
+They never expand the bare native or API-key model list. This keeps account-scoped upstream ids
+such as `gpt-daybreak-blue-latest` callable without treating them as a global Desktop release.
 
 The app-server's model list comes from this shared catalog, not from patching the App. Codex Desktop
 may still apply its remote native-only allowlist after `model/list`; an explicitly configured combo

@@ -4,7 +4,7 @@ import { loadConfig } from "../../config";
 import { activeCodexModelsCachePath } from "./parsing";
 import { codexDesktopNativeModelsNeedSync } from "./metadata";
 
-/** Watch Desktop's model cache and reconcile newly observed account-native models. */
+/** Watch Desktop's model cache and reconcile native and account-scoped model rows. */
 export function startCodexDesktopModelCacheWatcher(
   sync: () => Promise<unknown>,
   log: Pick<Console, "error"> = console,
@@ -26,7 +26,7 @@ export function startCodexDesktopModelCacheWatcher(
   let syncing = false;
   let pending = false;
 
-  /** Reconcile only once Desktop has published a genuinely new model row. */
+  /** Reconcile only when the Desktop cache differs from the projected catalog. */
   const runSync = async () => {
     if (stopped || syncing || !codexDesktopNativeModelsNeedSync(loadConfig())) return;
     syncing = true;
