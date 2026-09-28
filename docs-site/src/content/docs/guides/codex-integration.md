@@ -199,6 +199,13 @@ start and on `ocx sync`, opencodex:
 4. **Filters** `config.disabledModels` and each provider's non-empty `selectedModels` allowlist.
 5. **Re-ranks** so featured models sort first (see below), then writes the merged catalog back.
 
+While the proxy and Codex integration are enabled, OpenCodex also watches `$CODEX_HOME/models_cache.json`.
+Visible, API-supported native rows in Desktop's current cache are mirrored into the bare native
+catalog, including their display name, reasoning ladder, and model capability limits. The sync
+copies only these catalog fields; it does not copy Desktop prompt or instruction payloads. Added,
+removed, or changed rows are reconciled automatically. Unknown account-scoped models continue to
+use account selectors and are never promoted to the global native list by this path.
+
 Routed catalog entries also get their GPT-5 identity rewritten to the real upstream model name.
 Reasoning controls come from provider/model metadata across Codex's `low | medium | high | xhigh |
 max | ultra` ladder; unsupported values are mapped or clamped before the upstream request.

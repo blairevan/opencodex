@@ -43,6 +43,7 @@ import {
 } from "./bundled";
 import { isMultiAgentV2Enabled } from "../features";
 import { applyCatalogModelMetadata, applyReasoningLevels, catalogEntryEfforts, clampCatalogModelsToCodexSupport, ensureGpt56ReasoningLevels, ensureUltraReasoningLevel, isGpt56NativeSlug } from "./effort";
+import { desktopNativeModelRows, isDesktopNativeCatalogRow, projectDesktopNativeModelRow } from "./desktop-native-cache";
 import {
   clearGatherRoutedModelsInflight,
   filterCatalogVisibleModels,
@@ -676,7 +677,7 @@ function isOcxAuthoredRoutedEntry(entry: RawEntry): boolean {
 
 function recoverableNativeSlug(entry: RawEntry): string | null {
   const slug = typeof entry.slug === "string" ? entry.slug : "";
-  return SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug)
+  return (SUPPORTED_NATIVE_OPENAI_SLUGS.has(slug) || isDesktopNativeCatalogRow(entry))
     && !isNativeAliasCatalogEntry(entry)
     && entry.owned_by !== COMBO_NAMESPACE
     ? slug
@@ -707,6 +708,8 @@ export function mergeCatalogModelsWithNativeRecovery(
 export interface ObservedCatalogMergePolicy {
   /** Required observed/fixed set; the core merge never consults ambient catalog state. */
   readonly nativeBackfillSlugs: readonly string[];
+  /** Native slugs validated from the caller's Codex Desktop cache snapshot. */
+  readonly desktopNativeSlugs?: readonly string[];
   /** Whether unsupported OpenAI-family bare rows survive the merge. */
   readonly unsupportedNativeEntries: "preserve" | "drop";
   /** Whether merge-policy collision/preservation warnings belong to this caller's flow. */
@@ -783,6 +786,7 @@ export function mergeCatalogEntriesFromObservedState({
   const detachedAccountBoundEntries = accountBoundEntries
     .map(entry => structuredClone(entry) as RawEntry);
   const disabledModelKeys = new Set([...disabledModels].map(slugEquivalenceKey));
+  const desktopNativeSlugs = new Set(policy.desktopNativeSlugs ?? []);
   const legacyCustomModelKeys = new Set(
     [...legacyCustomModelSlugs].map(slugEquivalenceKey),
   );
@@ -800,7 +804,7 @@ export function mergeCatalogEntriesFromObservedState({
       || typeof entry.slug !== "string") return false;
     const slug = entry.slug;
     if (!slug.includes("/")) {
-      if (!includeNativeOpenAi || policy.nativeBackfillSlugs.includes(slug)) return false;
+      if (!includeNativeOpenAi || policy.nativeBackfillSlugs.includes(slug) || desktopNativeSlugs.has(slug)) return false;
       return policy.unsupportedNativeEntries === "preserve" || !isUnsupportedOpenAiNativeSlug(slug);
     }
     if (isRoutedModelCompatibilityExcluded(slug)) return false;
@@ -899,6 +903,7 @@ export function mergeCatalogEntriesFromObservedState({
       && m.owned_by !== COMBO_NAMESPACE
       && (policy.unsupportedNativeEntries === "preserve"
         || policy.nativeBackfillSlugs.includes(m.slug as string)
+        || desktopNativeSlugs.has(m.slug as string)
         || !isUnsupportedOpenAiNativeSlug(m.slug as string)))
     .map(m => {
       const slug = m.slug as string;
@@ -1066,7 +1071,7 @@ export function mergeCatalogEntriesFromObservedState({
     // Mock-max universality (260709): preserved routed entries from disk may predate
     // the max rung — ensure it here so subagent max spawns validate on every
     // reasoning-capable entry. max only: 5.6 exact ladders (luna: no ultra) stay intact.
-    if (!exactCombo) {
+    if (!exactCombo && !isDesktopNativeCatalogRow(e)) {
       const levels = Array.isArray(e.supported_reasoning_levels)
         ? e.supported_reasoning_levels as Array<{ effort?: string }>
         : [];
@@ -1365,12 +1370,28 @@ function writeRetainedCatalogSync({
   owningCodexHome,
 }: RetainedCatalogSyncWrite): RetainedCatalogSyncResult {
   const { catalogPath, catalog, onDiskCatalog } = read;
-  const catalogModelsForMerge = catalogModelsForMergeWithNativeRecovery(
+  const nativeTemplate = findNativeTemplate(catalog);
+  const desktopRows = read.modelsCache?.client_version === "0.0.0"
+    ? []
+    : desktopNativeModelRows(read.modelsCache?.models ?? []).filter(row =>
+      typeof row.slug === "string" && !SUPPORTED_NATIVE_OPENAI_SLUGS.has(row.slug));
+  const desktopNativeSlugs = desktopRows.flatMap(row =>
+    typeof row.slug === "string" ? [row.slug] : []);
+  const priorModels = catalogModelsForMergeWithNativeRecovery(
     catalogPath,
     catalog,
     onDiskCatalog,
   );
-  const template = findNativeTemplate(catalog);
+  const currentDesktopSlugs = new Set(desktopNativeSlugs);
+  const catalogModelsForMerge = [
+    ...priorModels.filter(entry => !isDesktopNativeCatalogRow(entry)
+      || (typeof entry.slug === "string" && currentDesktopSlugs.has(entry.slug))),
+    ...desktopRows.flatMap(entry => {
+      const projected = projectDesktopNativeModelRow(nativeTemplate, entry);
+      return projected ? [projected] : [];
+    }),
+  ];
+  const template = nativeTemplate;
 
   try {
     // Once-only: preserve the PRISTINE pre-opencodex catalog as the native-priority baseline
@@ -1508,7 +1529,8 @@ function writeRetainedCatalogSync({
     openaiContextCap,
     policy: {
       ...CANONICAL_NATIVE_CATALOG_CONTENT_POLICY,
-      nativeBackfillSlugs: [...NATIVE_OPENAI_MODELS, ...observedNativeSlugs],
+      nativeBackfillSlugs: [...NATIVE_OPENAI_MODELS, ...observedNativeSlugs, ...desktopNativeSlugs],
+      desktopNativeSlugs,
       warningPolicy: "emit",
     },
   });

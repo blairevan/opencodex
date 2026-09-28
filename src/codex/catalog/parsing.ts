@@ -34,6 +34,7 @@ import upstreamModelsSnapshot from "../data/upstream-models.json";
 import { NATIVE_OPENAI_CONTEXT_OVERRIDES, SUPPORTED_NATIVE_OPENAI_SLUGS, UPSTREAM_NATIVE_ENTRIES, isNativeOpenAiCapabilityAliasModel, nativeMultiAgentVersion } from "./metadata";
 import { trustedAccountBoundNativeCatalogSlug } from "./account-models";
 import { CODEX_NATIVE_ALIAS_CATALOG_KIND } from "./kinds";
+import { isDesktopNativeCatalogRow } from "./desktop-native-cache";
 
 export function legacyCatalogBackupPath(): string {
   return join(getConfigDir(), "catalog-backup.json");
@@ -478,7 +479,10 @@ export function catalogModelSlug(model: CatalogModel): string {
 
 export function filterSupportedNativeSlugs(models: RawEntry[]): string[] {
   return models
-    .filter(m => typeof m.slug === "string" && !(m.slug as string).includes("/") && m.visibility === "list" && SUPPORTED_NATIVE_OPENAI_SLUGS.has(m.slug as string))
+    .filter(m => typeof m.slug === "string"
+      && !(m.slug as string).includes("/")
+      && m.visibility === "list"
+      && (SUPPORTED_NATIVE_OPENAI_SLUGS.has(m.slug as string) || isDesktopNativeCatalogRow(m)))
     .map(m => m.slug as string);
 }
 
