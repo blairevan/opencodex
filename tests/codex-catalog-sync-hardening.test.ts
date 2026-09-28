@@ -1139,6 +1139,49 @@ describe("Codex catalog sync hardening", () => {
     expect(out.realChangeBumpedMtime).toBe(true);
   });
 
+  test("an invalidated Desktop cache preserves projected rows until a versioned snapshot arrives", () => {
+    const catalogPath = join(codexHome, "catalog.json");
+    const cachePath = join(codexHome, "models_cache.json");
+    writeFileSync(join(codexHome, "config.toml"), 'model_catalog_json = "catalog.json"\n', "utf8");
+    writeFileSync(catalogPath, JSON.stringify({
+      models: [
+        nativeEntry("gpt-5.5", 0),
+        {
+          ...nativeEntry("gpt-6-sol", 1),
+          opencodex_catalog_kind: "codex-desktop-native-v1",
+          opencodex_desktop_native_fingerprint: "previous-desktop-snapshot",
+        },
+      ],
+    }, null, 2) + "\n");
+    writeFileSync(cachePath, JSON.stringify({
+      fetched_at: "2000-01-01T00:00:00Z",
+      client_version: "0.0.0",
+      models: [nativeEntry("gpt-5.5", 0)],
+    }, null, 2) + "\n");
+
+    const r = runScript(codexHome, opencodexHome, `
+      const { readFileSync, writeFileSync } = require("node:fs");
+      const { syncCatalogModels } = require("./src/codex/catalog");
+      const catalogPath = ${JSON.stringify(catalogPath)};
+      const cachePath = ${JSON.stringify(cachePath)};
+      (async () => {
+        await syncCatalogModels({ providers: {} });
+        const retained = JSON.parse(readFileSync(catalogPath, "utf8")).models
+          .some(model => model.slug === "gpt-6-sol");
+        writeFileSync(cachePath, JSON.stringify({ client_version: "0.157.1", models: [] }));
+        await syncCatalogModels({ providers: {} });
+        const removedByAuthoritativeSnapshot = !JSON.parse(readFileSync(catalogPath, "utf8")).models
+          .some(model => model.slug === "gpt-6-sol");
+        console.log(JSON.stringify({ retained, removedByAuthoritativeSnapshot }));
+      })();
+    `);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual({
+      retained: true,
+      removedByAuthoritativeSnapshot: true,
+    });
+  });
+
   test("the no-op guard compares bytes, so a malformed byte decoding to U+FFFD is still repaired", () => {
     // The guard above must not preserve corruption. `readFileSync(path, "utf8")`
     // substitutes U+FFFD for every invalid byte, so a catalog holding a bare 0x80
