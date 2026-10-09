@@ -30,6 +30,7 @@ import {
 } from "../lib/translator-budget";
 import { buildNonOpenAIToolCatalogNudgeForTools } from "./tool-catalog-nudge";
 import { mapReasoningEffort } from "../reasoning-effort";
+import { providerMetadataFromGoogleFunctionCallPart } from "../responses/provider-opaque-metadata";
 
 // Google-family models (Gemini/Vertex/Antigravity) tend to emit long running commentary between
 // tool calls. This steers them to keep the BETWEEN-STEP text to one line and reason internally
@@ -182,7 +183,10 @@ function messagesToGeminiFormat(
             // conversion 400s. Gemini accepts the optional id and pairs call/response by it.
             if (callId !== undefined) functionCall.id = callId;
             const part: Record<string, unknown> = { functionCall };
-            if (isLikelyRealThoughtSignature(tc.thoughtSignature)) part.thoughtSignature = tc.thoughtSignature;
+            const providerSignature = tc.providerMetadata?.google?.thoughtSignature;
+            const signature = providerSignature
+              ?? (isLikelyRealThoughtSignature(tc.thoughtSignature) ? tc.thoughtSignature : undefined);
+            if (signature) part.thoughtSignature = signature;
             parts.push(part);
           }
         }
@@ -531,7 +535,10 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
               const id = `call_${crypto.randomUUID().slice(0, 8)}`;
               toolCallsStarted++;
               emittedContentEvent = true;
-              yield { type: "tool_call_start", id, name: restoreGoogleToolName(part.functionCall.name) };
+              yield {
+                type: "tool_call_start", id, name: restoreGoogleToolName(part.functionCall.name),
+                providerMetadata: providerMetadataFromGoogleFunctionCallPart(part),
+              };
               yield { type: "tool_call_delta", arguments: JSON.stringify(part.functionCall.args ?? {}) };
               yield { type: "tool_call_end" };
             }
@@ -742,7 +749,10 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           if (part.functionCall) {
             const id = `call_${crypto.randomUUID().slice(0, 8)}`;
             toolCallsStarted++;
-            events.push({ type: "tool_call_start", id, name: restoreGoogleToolName(part.functionCall.name) });
+            events.push({
+              type: "tool_call_start", id, name: restoreGoogleToolName(part.functionCall.name),
+              providerMetadata: providerMetadataFromGoogleFunctionCallPart(part),
+            });
             events.push({ type: "tool_call_delta", arguments: JSON.stringify(part.functionCall.args ?? {}) });
             events.push({ type: "tool_call_end" });
           }

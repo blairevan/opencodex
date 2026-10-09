@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import { namespacedToolName } from "../types";
 import { responsesRequestSchema } from "./schema";
+import { providerMetadataFromResponsesFunctionCall } from "./provider-opaque-metadata";
 import { compactionItemToText } from "./compaction";
 import { previousResponseReplayPrefixLength } from "./state";
 import { decodeReasoningEnvelope } from "./reasoning-envelope";
@@ -470,7 +471,7 @@ export function parseRequest(body: unknown): OcxParsedRequest {
       }
 
       if (effectiveType === "function_call") {
-        const call = item as { id?: string; call_id: string; name: string; arguments?: string; namespace?: string };
+        const call = item as { id?: string; call_id: string; name: string; arguments?: string; namespace?: string; extra_content?: unknown };
         // Tolerate empty/non-JSON arguments (e.g. a no-arg tool call serialized as "") instead of
         // throwing — a single poisoned history item would otherwise 400 every subsequent turn.
         let args: Record<string, unknown> = {};
@@ -491,17 +492,21 @@ export function parseRequest(body: unknown): OcxParsedRequest {
           type: "toolCall", id: call.call_id, name: call.name, arguments: args,
           ...(call.namespace ? { namespace: call.namespace } : {}),
         };
+        const providerMetadata = providerMetadataFromResponsesFunctionCall(call);
+        if (providerMetadata) toolCall.providerMetadata = providerMetadata;
         assistantHolderWithReasoning().content.push(toolCall);
         continue;
       }
 
       if (effectiveType === "custom_tool_call") {
-        const call = item as { id?: string; call_id: string; name: string; input: string };
+        const call = item as { id?: string; call_id: string; name: string; input: string; extra_content?: unknown };
         const toolCall: OcxToolCall = {
           type: "toolCall", id: call.call_id, name: call.name,
           arguments: { input: call.input ?? "" },
           customWireName: call.name,
         };
+        const providerMetadata = providerMetadataFromResponsesFunctionCall(call);
+        if (providerMetadata) toolCall.providerMetadata = providerMetadata;
         assistantHolderWithReasoning().content.push(toolCall);
         continue;
       }

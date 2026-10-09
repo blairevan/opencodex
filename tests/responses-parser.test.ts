@@ -170,6 +170,23 @@ describe("Responses parser", () => {
 describe("codex-rs compat surface (260707)", () => {
   const base = { model: "claude-sonnet-4-6", stream: true };
 
+  test("preserves Google thought signature from a function-call history item", () => {
+    const signature = "CiQAx-parser-history-signature-0123456789abcdef";
+    const parsed = parseRequest({ ...base, input: [
+      {
+        type: "function_call",
+        call_id: "call_signed",
+        name: "exec",
+        arguments: "{}",
+        extra_content: { google: { thought_signature: signature } },
+      },
+    ]});
+
+    const assistant = parsed.context.messages.find(message => message.role === "assistant");
+    const call = (assistant?.content as Array<{ providerMetadata?: { google?: { thoughtSignature?: string } } }> | undefined)?.[0];
+    expect(call?.providerMetadata?.google?.thoughtSignature).toBe(signature);
+  });
+
   test("function_call_output arrays keep input_text blocks (FunctionCallOutputContentItem)", () => {
     const parsed = parseRequest({ ...base, input: [
       { type: "function_call", call_id: "c1", name: "view_image", arguments: "{}" },

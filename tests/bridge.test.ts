@@ -620,6 +620,45 @@ describe("Responses bridge reasoning and usage parity", () => {
     expect(output[1].id).toStartWith("tsc_");
   });
 
+  test("preserves Google provider metadata on a custom tool call", () => {
+    const signature = "CiQAx-bridge-custom-signature-0123456789abcdef";
+    const json = buildResponseJSON([
+      {
+        type: "tool_call_start",
+        id: "call_signed",
+        name: "apply_patch",
+        providerMetadata: { google: { thoughtSignature: signature } },
+      },
+      { type: "tool_call_delta", arguments: "{\"input\":\"patch\"}" },
+      { type: "tool_call_end" },
+      { type: "done" },
+    ], "routed/model", { freeformToolNames: new Set(["apply_patch"]) });
+
+    const call = (json.output as Array<{ extra_content?: unknown }>)[0];
+    expect(call?.extra_content).toEqual({
+      google: { thought_signature: signature },
+    });
+  });
+
+  test("streaming custom tool calls retain Google metadata on the completed output item", async () => {
+    const signature = "CiQAx-stream-custom-signature-0123456789abcdef";
+    const frames = await collectSse(bridgeToResponsesSSE(replay([
+      {
+        type: "tool_call_start",
+        id: "call_stream_signed",
+        name: "apply_patch",
+        providerMetadata: { google: { thoughtSignature: signature } },
+      },
+      { type: "tool_call_delta", arguments: "{\"input\":\"patch\"}" },
+      { type: "tool_call_end" },
+      { type: "done" },
+    ]), "routed/model", undefined, new Set(["apply_patch"])));
+    const completed = frames.find(frame => frame.event === "response.output_item.done");
+    const item = completed?.data.item as { extra_content?: unknown } | undefined;
+
+    expect(item?.extra_content).toEqual({ google: { thought_signature: signature } });
+  });
+
   test("streaming freeform tool call emits unwrapped custom_tool_call_input deltas", async () => {
     const frames = await collectSse(bridgeToResponsesSSE(replay([
       { type: "tool_call_start", id: "c1", name: "apply_patch" },

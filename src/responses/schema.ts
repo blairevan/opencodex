@@ -64,6 +64,7 @@ const functionCallItemSchema = z.object({
   name: z.string().min(1),
   namespace: z.string().optional(),
   arguments: z.string().optional(),
+  extra_content: z.unknown().optional(),
 });
 const functionCallOutputItemSchema = z.object({
   type: z.literal("function_call_output"),
@@ -76,6 +77,7 @@ const customToolCallItemSchema = z.object({
   call_id: z.string().min(1),
   name: z.string().min(1),
   input: z.string(),
+  extra_content: z.unknown().optional(),
 });
 const customToolCallOutputItemSchema = z.object({
   type: z.literal("custom_tool_call_output"),

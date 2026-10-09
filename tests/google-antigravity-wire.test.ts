@@ -352,6 +352,24 @@ describe("antigravity parseResponse unwraps response (non-streaming)", () => {
 });
 
 describe("antigravity history preserves tool-call thoughtSignature", () => {
+  test("forwards an opaque Responses provider signature without reclassifying its format", async () => {
+    const signature = "opaque/provider-signature:v2+α";
+    const req = await createGoogleAdapter(provider).buildRequest({
+      ...parsed(),
+      context: {
+        messages: [{ role: "assistant", content: [{
+          type: "toolCall", id: "call_exact_1", name: "get_x", arguments: {},
+          providerMetadata: { google: { thoughtSignature: signature } },
+        }] }],
+        systemPrompt: [], tools: [],
+      },
+    } as unknown as OcxParsedRequest);
+    const env = JSON.parse(req.body);
+    const modelTurn = env.request.contents.find((content: { role: string }) => content.role === "model");
+    const fcPart = modelTurn.parts.find((part: Record<string, unknown>) => "functionCall" in part);
+    expect(fcPart.thoughtSignature).toBe(signature);
+  });
+
   test("a prior assistant toolCall with thoughtSignature carries it into the CCA request part", async () => {
     const p = {
       modelId: "gemini-3-pro",

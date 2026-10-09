@@ -1,7 +1,8 @@
-import type { AdapterEvent, OcxMessagePhase, OcxProviderContinuationState, OcxUsage } from "./types";
+import type { AdapterEvent, OcxMessagePhase, OcxProviderContinuationState, OcxProviderOpaqueToolCallMetadata, OcxUsage } from "./types";
 import { adapterFailureFromMessage, classifyError, CYBER_POLICY_ERROR_CODE, isCyberPolicyCode, type OcxErrorPayload } from "./lib/errors";
 import { encodeCompactionSummary } from "./responses/compaction";
 import { encodeReasoningEnvelope, type ReasoningEnvelope } from "./responses/reasoning-envelope";
+import { responsesExtraContentFromProviderMetadata } from "./responses/provider-opaque-metadata";
 import { rememberReasoningForCall } from "./responses/reasoning-replay-cache";
 import { resolveStallTimeoutSec } from "./stall-timeout";
 import { usageDisplayTotalTokens } from "./usage/totals";
@@ -461,7 +462,7 @@ export function bridgeToResponsesSSE(
       // synthetic compaction item's payload on done.
       let compactionText = "";
       let compactionTextBytes = 0;
-      let currentToolCall: { itemId: string; outputIndex: number; callId: string; name: string; args: string; argsBytes: number; namespace?: string; freeform?: boolean; toolSearch?: boolean; inputEmitted?: string } | null = null;
+      let currentToolCall: { itemId: string; outputIndex: number; callId: string; name: string; args: string; argsBytes: number; namespace?: string; freeform?: boolean; toolSearch?: boolean; inputEmitted?: string; providerMetadata?: OcxProviderOpaqueToolCallMetadata } | null = null;
       // Open native web-search cell (between begin and end). Holds the output index allocated on
       // begin so the matching done reuses it; closed as `failed` if the stream terminates early.
       let currentWebSearch: { itemId: string; eventId: string; outputIndex: number } | null = null;
@@ -581,6 +582,7 @@ export function bridgeToResponsesSSE(
               arguments: argsStr, status: "completed",
               ...(currentToolCall.namespace ? { namespace: currentToolCall.namespace } : {}),
             };
+        Object.assign(item, responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata));
         emit("response.output_item.done", { output_index: currentToolCall.outputIndex, item });
         retainFinishedItem(item as OutputItem);
         budget?.closeCall(currentToolCall.callId);
@@ -615,6 +617,7 @@ export function bridgeToResponsesSSE(
               arguments: argsStr, status: "incomplete",
               ...(currentToolCall.namespace ? { namespace: currentToolCall.namespace } : {}),
             };
+        Object.assign(item, responsesExtraContentFromProviderMetadata(currentToolCall.providerMetadata));
         emit("response.output_item.done", { output_index: currentToolCall.outputIndex, item });
         retainFinishedItem(item as OutputItem);
         budget?.closeCall(currentToolCall.callId);
@@ -947,7 +950,7 @@ export function bridgeToResponsesSSE(
                 ? { type: "custom_tool_call", id: itemId, call_id: event.id, name: realName, input: "", status: "in_progress" }
                 : { type: "function_call", id: itemId, call_id: event.id, name: realName, arguments: "", status: "in_progress", ...(ns ? { namespace: ns } : {}) };
               emit("response.output_item.added", { output_index: outputIndex, item });
-              currentToolCall = { itemId, outputIndex, callId: event.id, name: realName, args: "", argsBytes: 0, namespace: ns, freeform, toolSearch };
+              currentToolCall = { itemId, outputIndex, callId: event.id, name: realName, args: "", argsBytes: 0, namespace: ns, freeform, toolSearch, providerMetadata: event.providerMetadata };
               budget?.openCall(event.id);
               break;
             }
@@ -1398,6 +1401,7 @@ function buildResponseJSONWithBudget(
   let batchRedactedBytes = 0;
   let currentToolCallId = "";
   let currentToolCallName = "";
+  let currentToolCallProviderMetadata: OcxProviderOpaqueToolCallMetadata | undefined;
   let currentToolCallArgs = "";
   let currentToolCallArgsBytes = 0;
   // Web-search citations awaiting the next assistant message (attached as url_citation annotations).
@@ -1488,12 +1492,14 @@ function buildResponseJSONWithBudget(
         type: "tool_search_call", id: `tsc_${uuid()}`,
         call_id: currentToolCallId, execution: "client",
         arguments: parseArgsObj(currentToolCallArgs), status,
+        ...responsesExtraContentFromProviderMetadata(currentToolCallProviderMetadata),
       });
     } else if (freeform) {
       pushOutput({
         type: "custom_tool_call", id: `ctc_${uuid()}`,
         call_id: currentToolCallId, name: realName,
         input: freeformInput(currentToolCallArgs), status,
+        ...responsesExtraContentFromProviderMetadata(currentToolCallProviderMetadata),
       });
     } else {
       pushOutput({
@@ -1501,11 +1507,13 @@ function buildResponseJSONWithBudget(
         call_id: currentToolCallId, name: realName,
         arguments: currentToolCallArgs || "{}", status,
         ...(ns ? { namespace: ns } : {}),
+        ...responsesExtraContentFromProviderMetadata(currentToolCallProviderMetadata),
       });
     }
     budget?.closeCall(currentToolCallId);
     currentToolCallId = "";
     currentToolCallName = "";
+    currentToolCallProviderMetadata = undefined;
     currentToolCallArgs = "";
     currentToolCallArgsBytes = 0;
   };
@@ -1588,6 +1596,7 @@ function buildResponseJSONWithBudget(
         currentToolCallId = e.id;
         budget?.openCall(e.id);
         currentToolCallName = e.name;
+        currentToolCallProviderMetadata = e.providerMetadata;
         currentToolCallArgs = "";
         currentToolCallArgsBytes = 0;
         break;
