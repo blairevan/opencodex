@@ -253,3 +253,8 @@ visibility, priority, or metadata changes, so the next Codex model refresh reads
 While the OpenCodex daemon is running with Codex integration enabled, it watches that cache and
 reconciles newly observed account-native model ids automatically. Those ids remain scoped to the
 configured Codex account selectors; they are not promoted into the global static native list.
+
+Desktop-native catalog rows are reconciled by model slug: a fresh cache row replaces the previous
+generated row instead of appending another copy. Sync also repairs duplicate generated rows left
+by earlier refreshes. An invalidated cache preserves one existing row per slug until Desktop
+provides a versioned snapshot.

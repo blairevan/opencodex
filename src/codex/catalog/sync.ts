@@ -43,7 +43,7 @@ import {
 } from "./bundled";
 import { isMultiAgentV2Enabled } from "../features";
 import { applyCatalogModelMetadata, applyReasoningLevels, catalogEntryEfforts, clampCatalogModelsToCodexSupport, ensureGpt56ReasoningLevels, ensureUltraReasoningLevel, isGpt56NativeSlug } from "./effort";
-import { desktopNativeModelRows, isDesktopNativeCatalogRow, projectDesktopNativeModelRow } from "./desktop-native-cache";
+import { desktopNativeModelRows, isDesktopNativeCatalogRow, projectDesktopNativeModelRow, reconcileDesktopNativeCatalogRows } from "./desktop-native-cache";
 import {
   clearGatherRoutedModelsInflight,
   filterCatalogVisibleModels,
@@ -1385,16 +1385,14 @@ function writeRetainedCatalogSync({
     catalog,
     onDiskCatalog,
   );
-  const currentDesktopSlugs = new Set(desktopNativeSlugs);
-  const catalogModelsForMerge = [
-    ...priorModels.filter(entry => !isDesktopNativeCatalogRow(entry)
-      || !hasAuthoritativeDesktopCache
-      || (typeof entry.slug === "string" && currentDesktopSlugs.has(entry.slug))),
-    ...desktopRows.flatMap(entry => {
+  const catalogModelsForMerge = reconcileDesktopNativeCatalogRows(
+    priorModels,
+    desktopRows.flatMap(entry => {
       const projected = projectDesktopNativeModelRow(nativeTemplate, entry);
       return projected ? [projected] : [];
     }),
-  ];
+    hasAuthoritativeDesktopCache,
+  );
   const retainedDesktopSlugs = catalogModelsForMerge.flatMap(entry =>
     isDesktopNativeCatalogRow(entry) && typeof entry.slug === "string" ? [entry.slug] : []);
   const template = nativeTemplate;

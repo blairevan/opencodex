@@ -76,6 +76,22 @@ export function isDesktopNativeCatalogRow(entry: RawEntry): boolean {
     && MODEL_SLUG_PATTERN.test(entry.slug);
 }
 
+/** Replace owned Desktop rows by slug, repairing historical duplicates without changing foreign rows. */
+export function reconcileDesktopNativeCatalogRows(
+  prior: readonly RawEntry[],
+  current: readonly RawEntry[],
+  authoritative: boolean,
+): RawEntry[] {
+  const foreign = prior.filter(entry => !isDesktopNativeCatalogRow(entry));
+  const owned = new Map<string, RawEntry>();
+  for (const entry of authoritative ? current : [...prior, ...current]) {
+    if (isDesktopNativeCatalogRow(entry) && typeof entry.slug === "string") {
+      owned.set(entry.slug, entry);
+    }
+  }
+  return [...foreign, ...owned.values()];
+}
+
 /** Compare the capabilities OpenCodex mirrors, ignoring Desktop prompt and session fields. */
 export function desktopNativeRowMatchesCache(entry: RawEntry, observed: RawEntry): boolean {
   return entry.slug === observed.slug

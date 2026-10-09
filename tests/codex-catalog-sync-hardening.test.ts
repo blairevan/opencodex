@@ -1139,6 +1139,40 @@ describe("Codex catalog sync hardening", () => {
     expect(out.realChangeBumpedMtime).toBe(true);
   });
 
+  test("repeated Desktop cache sync repairs duplicates and never appends the same slug", () => {
+    const catalogPath = join(codexHome, "catalog.json");
+    const cachePath = join(codexHome, "models_cache.json");
+    const observed = {
+      ...nativeEntry("gpt-6-sol", 1),
+      supported_in_api: true,
+      context_window: 200000,
+    };
+    writeFileSync(join(codexHome, "config.toml"), 'model_catalog_json = "catalog.json"\n');
+    writeFileSync(catalogPath, JSON.stringify({ models: [
+      nativeEntry("gpt-5.5", 0),
+      { ...observed, opencodex_catalog_kind: "codex-desktop-native-v1" },
+      { ...observed, opencodex_catalog_kind: "codex-desktop-native-v1" },
+    ] }));
+    const r = runScript(codexHome, opencodexHome, `
+      const { readFileSync, writeFileSync } = require("node:fs");
+      const { syncCatalogModels } = require("./src/codex/catalog");
+      (async () => {
+        const counts = [];
+        for (let i = 0; i < 3; i++) {
+          writeFileSync(${JSON.stringify(cachePath)}, JSON.stringify({
+            client_version: "0.157.1", models: [${JSON.stringify(observed)}]
+          }));
+          await syncCatalogModels({ providers: {} });
+          counts.push(JSON.parse(readFileSync(${JSON.stringify(catalogPath)}, "utf8"))
+            .models.filter(row => row.slug === "gpt-6-sol").length);
+        }
+        console.log(JSON.stringify(counts));
+      })();
+    `);
+    expect(r.status).toBe(0);
+    expect(JSON.parse(r.stdout)).toEqual([1, 1, 1]);
+  });
+
   test("an invalidated Desktop cache preserves projected rows until a versioned snapshot arrives", () => {
     const catalogPath = join(codexHome, "catalog.json");
     const cachePath = join(codexHome, "models_cache.json");
