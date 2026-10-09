@@ -8,6 +8,13 @@ import {
   resolveEnvValue,
 } from "../../config";
 import { parseRequest } from "../../responses/parser";
+import {
+  createGoogleThoughtSignatureScope,
+  rememberGoogleThoughtSignatures,
+  restoreGoogleThoughtSignatures,
+} from "../../responses/google-thought-signature-ledger";
+import { resolveAntigravityEffortWireModel } from "../../providers/antigravity-models";
+import { mapReasoningEffort } from "../../reasoning-effort";
 import { buildCompactV1Output, COMPACT_PROMPT, decodeCompactionSummary, extractCompactUserMessages } from "../../responses/compaction";
 import { FORWARD_HEADERS, sanitizeReasoningInputContent } from "../../adapters/openai-responses";
 import {
@@ -1491,6 +1498,7 @@ async function handleResponsesInner(
   const isOAuth401ReplayProvider = (route.providerName === "xai" || route.providerName === "github-copilot" || route.providerName === "kiro")
     && route.provider.authMode === "oauth";
   let sentOAuthSnapshot: OAuthAccessSnapshot | undefined;
+  let googleOAuthAccountId: string | undefined;
   let anthropicPoolAccountId: string | null = null;
   let anthropicPoolFailovers = 0;
   const anthropicSessionKey = route.providerName === "anthropic" && route.provider.authMode === "oauth"
@@ -1526,6 +1534,7 @@ async function handleResponsesInner(
         logCtx.provider = formatAnthropicProviderForLog("anthropic", selection.accountId, config);
       } else {
         const resolved = await getValidAccessTokenSnapshot(route.providerName);
+        if (route.providerName === "google-antigravity") googleOAuthAccountId = resolved.accountId;
         if (isOAuth401ReplayProvider) sentOAuthSnapshot = resolved;
         route.provider = { ...route.provider, apiKey: resolved.accessToken };
         if (route.providerName === "kiro") {
@@ -1559,6 +1568,38 @@ async function handleResponsesInner(
   );
   const adapterProvider = resolveWireProtocolOverride(route.providerName, route.modelId, route.provider, inboundWire);
   const adapter = resolveAdapter(adapterProvider, config.cacheRetention);
+  const googleThoughtSignatureScope = adapter.name === "google" && route.provider.googleMode === "cloud-code-assist"
+    ? createGoogleThoughtSignatureScope({
+      destination: route.provider.baseUrl,
+      project: route.provider.project ?? "",
+      account: googleOAuthAccountId ?? route.provider.apiKey ?? "",
+      wireModel: resolveAntigravityEffortWireModel(
+        parsed.modelId,
+        mapReasoningEffort(route.provider, parsed.modelId, parsed.options.reasoning),
+      ).wireModelId,
+      conversation: req.headers.get("x-codex-parent-thread-id")?.trim()
+        || (!parsed.options.promptCacheKey
+          ? sessionIdHeaderFromRequest(req.headers)?.trim() || req.headers.get("thread-id")?.trim() || ""
+          : ""),
+    })
+    : undefined;
+  if (googleThoughtSignatureScope) {
+    parsed._googleThoughtSignatureScope = googleThoughtSignatureScope;
+    restoreGoogleThoughtSignatures(googleThoughtSignatureScope, parsed.context.messages);
+  }
+  const rememberGoogleResponseSignatures = (response: Record<string, unknown>): void => {
+    if (!googleThoughtSignatureScope || !Array.isArray(response.output)) return;
+    if (response.status === "completed") {
+      rememberGoogleThoughtSignatures(googleThoughtSignatureScope, response.output);
+      return;
+    }
+    const incompleteDetails = response.incomplete_details;
+    if (response.status === "incomplete" && incompleteDetails && typeof incompleteDetails === "object"
+      && !Array.isArray(incompleteDetails)
+      && (incompleteDetails as { reason?: unknown }).reason === "max_output_tokens") {
+      rememberGoogleThoughtSignatures(googleThoughtSignatureScope, response.output);
+    }
+  };
   logCtx.providerAdapter = adapter.name;
   sealRequestAttemptIdentity(logCtx.activeAttempt, logCtx.provider, adapter.name);
   const isPassthrough = "passthrough" in adapter && !!adapter.passthrough;
@@ -2195,13 +2236,15 @@ async function handleResponsesInner(
       },
       ...(options.onFirstOutput ? { onFirstOutput: options.onFirstOutput } : {}),
       ...(options.forceEmptyResponseId ? { forceEmptyResponseId: true } : {}),
-      onCompletedResponse: (response, providerState) =>
+      onCompletedResponse: (response, providerState) => {
+        rememberGoogleResponseSignatures(response);
         rememberResponseState(
           parsed._rawBody,
           response,
           continuationStateForResponse(providerState),
           adapterNeedsForcedContinuation(adapter.name) ? { force: true } : undefined,
-        ),
+        );
+      },
     });
     if (imgResponse.body) {
       const imgTurnAc = new AbortController();
@@ -2388,6 +2431,7 @@ async function handleResponsesInner(
       },
     });
     if (!routedCompaction) {
+      rememberGoogleResponseSignatures(json);
       rememberResponseState(
         parsed._rawBody,
         json,

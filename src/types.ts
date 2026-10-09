@@ -29,6 +29,8 @@ export interface OcxParsedRequest {
   _cursorIsolateConversation?: boolean;
   /** Account-scoped, non-secret Kiro request metadata selected with the OAuth access token. */
   _kiroAuthContext?: Pick<KiroOAuthMetadata, "profileArn" | "apiRegion" | "ssoRegion">;
+  /** Hashed private scope for exact Google Antigravity thought-signature restoration. */
+  _googleThoughtSignatureScope?: { key: string };
   /** Provider-private continuation metadata resolved from the Responses previous_response_id chain. */
   _providerContinuation?: OcxProviderContinuationState;
   /**
@@ -132,6 +134,11 @@ export interface OcxThinkingContent {
   redacted?: string[];
 }
 
+/** Provider-owned metadata that must remain bound to one exact tool call. */
+export interface OcxProviderOpaqueToolCallMetadata {
+  google?: { thoughtSignature?: string };
+}
+
 export interface OcxToolCall {
   type: "toolCall";
   id: string;
@@ -139,6 +146,8 @@ export interface OcxToolCall {
   arguments: Record<string, unknown>;
   customWireName?: string;
   thoughtSignature?: string;
+  /** Opaque provider metadata restored from a Responses history item. */
+  providerMetadata?: OcxProviderOpaqueToolCallMetadata;
   /** MCP namespace (e.g. "mcp__context7") when this call targets a namespaced tool. */
   namespace?: string;
 }
@@ -255,7 +264,7 @@ export type AdapterEvent =
   | { type: "thinking_signature"; signature: string }
   | { type: "redacted_thinking"; data: string }
   | { type: "reasoning_raw_delta"; text: string }
-  | { type: "tool_call_start"; id: string; name: string }
+  | { type: "tool_call_start"; id: string; name: string; providerMetadata?: OcxProviderOpaqueToolCallMetadata }
   | { type: "tool_call_delta"; arguments: string }
   | { type: "tool_call_end" }
   /** Internal boundary between a guarded first pass and its one-shot continuation. */
