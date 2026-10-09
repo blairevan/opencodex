@@ -1,4 +1,5 @@
 import { flushResponseState } from "../responses/state";
+import { flushGoogleThoughtSignatures } from "../responses/google-thought-signature-ledger";
 import { setStorageCleanupPolicyLiveSink } from "../storage/policy";
 import {
   abortStorageCleanupPolicyJobAsync,
@@ -399,8 +400,8 @@ export async function drainAndShutdown(
 
     // Debounced replay-state snapshot may still be pending; flush so the last completed turn's
     // previous_response_id chain survives the restart this shutdown is usually part of.
-    const responseStateFlush = await Promise.allSettled([flushResponseState()]);
-    if (responseStateFlush[0]?.status === "rejected") {
+    const responseStateFlush = await Promise.allSettled([flushResponseState(), flushGoogleThoughtSignatures()]);
+    if (responseStateFlush.some(result => result.status === "rejected")) {
       console.warn("[responses] state flush during shutdown failed");
     }
 

@@ -105,11 +105,35 @@ function stubModelDiscoveryFor(...origins: string[]): void {
   }) as typeof fetch;
 }
 
+/**
+ * Avoid machine-specific DNS answers for fixture hostnames while retaining the
+ * synchronous destination policy checks exercised by provider management tests.
+ */
+const fixtureDestinationSpyRestorers: Array<() => void> = [];
+
+function stubPublicFixtureDestinations(...hostnames: string[]): void {
+  const allowed = new Set(hostnames.map(hostname => hostname.toLowerCase()));
+  const resolveDestination = destinationPolicy.providerDestinationResolvedError;
+  const spy = spyOn(destinationPolicy, "providerDestinationResolvedError").mockImplementation((name, provider, options) => {
+    const syncError = destinationPolicy.providerDestinationConfigError(name, provider);
+    if (syncError) return Promise.resolve(syncError);
+    try {
+      const hostname = new URL(provider.baseUrl).hostname.toLowerCase();
+      if (allowed.has(hostname)) return Promise.resolve(null);
+    } catch {
+      // Preserve the production resolver's handling of malformed URLs.
+    }
+    return resolveDestination(name, provider, options);
+  });
+  fixtureDestinationSpyRestorers.push(() => spy.mockRestore());
+}
+
 beforeEach(() => {
   isolatedCodexHome = installIsolatedCodexHome("ocx-server-auth-codex-");
 });
 
 afterEach(() => {
+  for (const restore of fixtureDestinationSpyRestorers.splice(0)) restore();
   globalThis.fetch = originalGlobalFetch;
   if (previousApiToken === undefined) delete process.env.OPENCODEX_API_AUTH_TOKEN;
   else process.env.OPENCODEX_API_AUTH_TOKEN = previousApiToken;
@@ -260,6 +284,7 @@ describe("provider management validation", () => {
   });
 
   test("provider management rejects runtime metadata and accepts only canonical OpenAI option seeds", async () => {
+    stubPublicFixtureDestinations("api.example.test");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;
@@ -477,6 +502,7 @@ describe("provider management validation", () => {
   });
 
   test("provider management does not persist registry-only static auth headers for opencode-free", async () => {
+    stubPublicFixtureDestinations("opencode.ai");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;
@@ -780,6 +806,7 @@ describe("provider management validation", () => {
  });
 
   test("provider PATCH can enable allowPrivateNetwork and then change baseUrl to localhost", async () => {
+    stubPublicFixtureDestinations("api.example.com");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;
@@ -861,6 +888,7 @@ describe("provider management validation", () => {
   });
 
   test("provider PATCH persists liveModels and provider metadata exposes the normalized state", async () => {
+    stubPublicFixtureDestinations("api.example.com");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;
@@ -1050,6 +1078,7 @@ describe("provider management validation", () => {
   });
 
   test("provider management rejects POST setDefault for a disabled provider", async () => {
+    stubPublicFixtureDestinations("alpha.example.test", "beta.example.test");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;
@@ -1823,6 +1852,7 @@ describe("provider management validation", () => {
   });
 
   test("provider PATCH field-mask edits non-reserved providers and rejects unsafe fields (WP040)", async () => {
+    stubPublicFixtureDestinations("extra.example.test", "extra2.example.test", "gateway.example.test");
     if (existsSync(TEST_DIR)) rmSync(TEST_DIR, { recursive: true });
     mkdirSync(TEST_DIR, { recursive: true });
     process.env.OPENCODEX_HOME = TEST_DIR;

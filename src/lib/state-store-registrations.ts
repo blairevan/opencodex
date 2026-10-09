@@ -35,6 +35,7 @@ import { listLiveOAuthAccountKeys, reconcileOAuthReauthState } from "../oauth/st
 import { reconcileGuardianBackoff } from "../oauth/token-guardian";
 import { sweepExpiredApiKeyCooldowns } from "../providers/key-failover";
 import { sweepExpiredResponseStates } from "../responses/state";
+import { sweepExpiredGoogleThoughtSignatures } from "../responses/google-thought-signature-ledger";
 import { sweepExpiredAntigravityReplay } from "../adapters/google-antigravity-replay";
 import { reconcileProviderAccountQuotaRows } from "../providers/quota";
 import { reconcileRouterWarningMemos } from "../router";
@@ -83,6 +84,7 @@ export const STATE_STORE_REGISTRATIONS = [
   { name: "anthropic-routing-health", sweepExpired: sweepExpiredAnthropicRoutingHealth },
   { name: "xai-refresh-verdicts", sweepExpired: sweepExpiredXaiPermanentFailureVerdicts },
   { name: "responses-continuation", sweepExpired: sweepExpiredResponseStates },
+  { name: "google-thought-signature-ledger", sweepExpired: sweepExpiredGoogleThoughtSignatures },
   { name: "antigravity-replay", sweepExpired: sweepExpiredAntigravityReplay },
   { name: "config-warning-memos", reconcileGeneration: (context: GenerationContext) => reconcileConfigWarningMemos(context.generation) },
   { name: "catalog-warning-memos", reconcileGeneration: (context: GenerationContext) => reconcileCatalogWarningMemos(context.generation) },
