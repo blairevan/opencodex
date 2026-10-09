@@ -12,6 +12,8 @@ import re
 import socket
 import shutil
 import subprocess
+import tempfile
+import tomllib
 from datetime import datetime
 from pathlib import Path
 
@@ -75,8 +77,33 @@ def ensure_backup(config_path: Path):
     return backup_path
 
 
+def split_root(content: str):
+    """Separate root settings from tables so profile settings stay untouched."""
+    match = re.search(r"^[ \t]*\[", content, re.MULTILINE)
+    return (content[:match.start()], content[match.start():]) if match else (content, "")
+
+
+def write_config(content: str):
+    """Validate TOML and atomically replace the config with its permissions intact."""
+    tomllib.loads(content)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8",
+                                         dir=CONFIG_FILE.parent, delete=False) as stream:
+            temporary_path = Path(stream.name)
+            os.chmod(temporary_path, CONFIG_FILE.stat().st_mode & 0o777)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, CONFIG_FILE)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+
+
 def parse_config(content: str):
     """解析当前 config.toml 中的关键路由状态"""
+    content, _ = split_root(content)
     is_proxy = bool(re.search(r"^[ \t]*openai_base_url[ \t]*=", content, re.MULTILINE))
 
     # 提取当前激活的 model
@@ -106,7 +133,8 @@ def switch_to_direct(content: str, fallback_model=DEFAULT_DIRECT_MODEL):
     2. 注释 model_catalog_json
     3. 若当前 model 包含 '/' (第三方路由模型)，备份为 # ocx_model 并临时替换为官方模型
     """
-    lines = content.splitlines()
+    root, tables = split_root(content)
+    lines = root.splitlines()
     new_lines = []
 
     for line in lines:
@@ -136,7 +164,7 @@ def switch_to_direct(content: str, fallback_model=DEFAULT_DIRECT_MODEL):
     result = "\n".join(new_lines)
     if not result.endswith("\n"):
         result += "\n"
-    return result
+    return result + tables
 
 
 def switch_to_proxy(content: str):
@@ -146,52 +174,41 @@ def switch_to_proxy(content: str):
     2. 解开 model_catalog_json 注释
     3. 恢复之前的 ocx_model 并移除临时的直连 model
     """
-    lines = content.splitlines()
+    root, tables = split_root(content)
+    lines = root.splitlines()
     new_lines = []
-
-    saved_ocx_model = None
+    routing_keys = ("openai_base_url", "model_catalog_json")
+    selected = {}
+    for key in routing_keys:
+        pattern = rf"^[ \t]*{key}[ \t]*="
+        active = next((line for line in lines if re.match(pattern, line)), None)
+        commented = next((re.sub(r"^[ \t]*#[ \t]*", "", line)
+                          for line in lines
+                          if re.match(rf"^[ \t]*#[ \t]*{key}[ \t]*=", line)), None)
+        selected[key] = active if active is not None else commented
+    saved_model = next((match.group(1) for line in lines
+                        if (match := re.match(r'^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*"([^"]+)"', line))), None)
+    emitted = set()
     for line in lines:
-        m = re.match(r'^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*"([^"]+)"', line)
-        if m:
-            saved_ocx_model = m.group(1)
-            break
-
-    skip_next_model = False
-    for line in lines:
-        # 1. 如果有保存的 ocx_model，当前行是 # ocx_model 声明，则恢复它
-        if re.match(r"^[ \t]*#[ \t]*ocx_model[ \t]*=[ \t]*", line):
-            if saved_ocx_model:
-                new_lines.append(f'model = "{saved_ocx_model}"')
-                skip_next_model = True
-                continue
-
-        # 跳过切换到直连时添加的临时 model
-        if skip_next_model and re.match(r"^[ \t]*model[ \t]*=[ \t]*", line):
-            skip_next_model = False
+        if saved_model and re.match(r"^[ \t]*(?:#[ \t]*ocx_model|model)[ \t]*=", line):
+            if "model" not in emitted:
+                new_lines.append(f'model = "{saved_model}"')
+                emitted.add("model")
             continue
-        skip_next_model = False
-
-        # 2. 解除 openai_base_url 注释
-        if re.match(r"^[ \t]*#[ \t]*openai_base_url[ \t]*=", line):
-            uncommented = re.sub(r"^[ \t]*#[ \t]*", "", line)
-            new_lines.append(uncommented)
+        match = re.match(r"^[ \t]*(?:#[ \t]*)?(openai_base_url|model_catalog_json)[ \t]*=", line)
+        if match:
+            key = match.group(1)
+            if key not in emitted:
+                new_lines.append(selected[key])
+                emitted.add(key)
             continue
-
-        # 3. 解除 model_catalog_json 注释
-        if re.match(r"^[ \t]*#[ \t]*model_catalog_json[ \t]*=", line):
-            uncommented = re.sub(r"^[ \t]*#[ \t]*", "", line)
-            new_lines.append(uncommented)
-            continue
-
         new_lines.append(line)
-
-    result_text = "\n".join(new_lines)
-    if not re.search(r"^[ \t]*openai_base_url[ \t]*=", result_text, re.MULTILINE):
-        result_text += f'\n# Auto-injected by opencodex\nopenai_base_url = "http://127.0.0.1:{PROXY_PORT}/v1"\n'
-
-    if not result_text.endswith("\n"):
-        result_text += "\n"
-    return result_text
+    if "openai_base_url" not in emitted:
+        new_lines.extend(["# Auto-injected by opencodex",
+                          f'openai_base_url = "http://127.0.0.1:{PROXY_PORT}/v1"'])
+    result = "\n".join(new_lines) + "\n" + tables
+    tomllib.loads(result)
+    return result
 
 
 def print_status():
@@ -252,7 +269,7 @@ def apply_switch(target_mode: str, fallback_model=DEFAULT_DIRECT_MODEL):
 
         backup_path = ensure_backup(CONFIG_FILE)
         new_content = switch_to_direct(content, fallback_model=fallback_model)
-        CONFIG_FILE.write_text(new_content, encoding="utf-8")
+        write_config(new_content)
         print(f"{GREEN}✔ 已成功切换到 [官方直连模式] (DIRECT / BYPASS){RESET}")
         if backup_path:
             print(f"   配置已备份至: {backup_path}")
@@ -266,7 +283,7 @@ def apply_switch(target_mode: str, fallback_model=DEFAULT_DIRECT_MODEL):
 
         backup_path = ensure_backup(CONFIG_FILE)
         new_content = switch_to_proxy(content)
-        CONFIG_FILE.write_text(new_content, encoding="utf-8")
+        write_config(new_content)
         print(f"{GREEN}✔ 已成功切换到 [OpenCodex 代理模式] (PROXY){RESET}")
         if backup_path:
             print(f"   配置已备份至: {backup_path}")
@@ -282,6 +299,7 @@ def apply_switch(target_mode: str, fallback_model=DEFAULT_DIRECT_MODEL):
 
 
 def main():
+    """Dispatch the requested route-switch action."""
     action = "toggle"
     if len(sys.argv) > 1:
         action = sys.argv[1].lower().strip("-")
@@ -312,4 +330,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (OSError, tomllib.TOMLDecodeError):
+        print(f"{RED}切换失败：请检查配置 TOML 语法和文件权限。{RESET}", file=sys.stderr)
+        sys.exit(1)
