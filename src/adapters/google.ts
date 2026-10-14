@@ -18,6 +18,7 @@ import { isAllowedToolChoice, namespacedToolName, resolveToolChoiceWireName, too
 import { contentPartsToText, parseDataUrl } from "./image";
 import { getVertexAccessToken } from "../lib/gcp-adc";
 import { isSyntheticToolCallIdLike } from "../lib/synthetic-tool-id";
+import { rememberGoogleOriginalToolCall, type GoogleThoughtSignatureScope } from "../responses/google-thought-signature-ledger";
 import { fetchAntigravityWithRetry, fetchVertexWithRetry } from "./google-http";
 import { safeAntigravityHttpErrorMessage, safeVertexHttpErrorMessage } from "./google-errors";
 import { isVertexTruncatedTurn, vertexTruncationErrorMessage } from "./google-truncation";
@@ -220,7 +221,11 @@ function messagesToGeminiFormat(
             // Responses parser also stashes synthetic item ids (`fc_...`) on this field, and sending
             // those as a thoughtSignature breaks continuity (the replay cache supplies the real one).
             const callId = geminiToolCallId(tc.id);
-            const functionCall: Record<string, unknown> = { name: namespacedToolName(tc.namespace, tc.name), args: tc.arguments };
+            const originalCall = tc.googleOriginalFunctionCall;
+            const functionCall: Record<string, unknown> = {
+              name: originalCall?.name ?? namespacedToolName(tc.namespace, tc.name),
+              args: originalCall?.arguments ?? tc.arguments,
+            };
             // Claude-on-Antigravity maps this id to Anthropic `tool_use.id`; without it the upstream
             // conversion 400s. Gemini accepts the optional id and pairs call/response by it.
             if (callId !== undefined) functionCall.id = callId;
@@ -439,6 +444,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
   // can stash the CCA model/session for parseStream's reasoning-replay observation.
   let antigravityModel: string | undefined;
   let antigravitySession: string | undefined;
+  let googleSignatureScope: GoogleThoughtSignatureScope | undefined;
   // Vertex returns the same opaque Gemini thought signatures as CCA, but its replay namespace
   // must stay transport-scoped: a signature minted by one Google backend must never be sent to
   // another merely because the public model id and first prompt happen to match.
@@ -460,6 +466,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       : {}),
 
     async buildRequest(parsed: OcxParsedRequest) {
+      googleSignatureScope = parsed._googleThoughtSignatureScope;
       const routedModelId = provider.googleMode === "cloud-code-assist"
         ? resolveAntigravityEffortWireModel(
             parsed.modelId,
@@ -520,7 +527,14 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
         const sessionId = antigravitySessionId(parsed);
         const mappedEffort = mapReasoningEffort(provider, parsed.modelId, parsed.options.reasoning);
         const { wireModelId, thinkingLevel } = resolveAntigravityEffortWireModel(parsed.modelId, mappedEffort);
-        antigravityModel = wireModelId;
+        // Exact-call scopes include account and destination. A failover must not use the
+        // name/arguments replay cache belonging to the rejected account.
+        const replayRoute = googleSignatureScope?.key ?? createHash("sha256")
+          .update(JSON.stringify([base, project, token])).digest("hex");
+        // First-user text is not a conversation identity. Headerless clients must carry
+        // provider metadata themselves instead of borrowing another conversation's cache.
+        antigravityModel = googleSignatureScope || parsed._clientThreadId?.trim()
+          ? `${wireModelId}:${replayRoute}` : undefined;
         antigravitySession = sessionId;
         // Effort → thinkingConfig for CCA (CLIProxyAPI proven: request.generationConfig.thinkingConfig).
         // Suffix/compat IDs return thinkingLevel=undefined — the suffix IS the effort, no contradiction.
@@ -554,7 +568,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
         if (Array.isArray((request as { contents?: unknown[] }).contents)) {
           const contents = (request as { contents: unknown[] }).contents;
           if (antigravityUsesReplayCache(wireModelId)) {
-            applyAntigravityReplay(wireModelId, sessionId, contents);
+            if (antigravityModel) applyAntigravityReplay(antigravityModel, sessionId, contents);
           } else {
             sanitizeAntigravityClaudeSignatures(contents);
           }
@@ -776,6 +790,9 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             }
             if (part.functionCall) {
               const id = `call_${crypto.randomUUID().slice(0, 8)}`;
+              rememberGoogleOriginalToolCall(googleSignatureScope, id,
+                googleThoughtSignatureFromPart(part as Record<string, unknown>)?.signature,
+                restoreGoogleToolName(part.functionCall.name), part.functionCall.args);
               toolCallsStarted++;
               if (provider.googleMode === "cloud-code-assist") {
                 debugGoogleToolCallSignature(part, toolCallsStarted, "stream");
@@ -1013,6 +1030,9 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           }
           if (part.functionCall) {
             const id = `call_${crypto.randomUUID().slice(0, 8)}`;
+            rememberGoogleOriginalToolCall(googleSignatureScope, id,
+              googleThoughtSignatureFromPart(part as Record<string, unknown>)?.signature,
+              restoreGoogleToolName(part.functionCall.name), part.functionCall.args);
             toolCallsStarted++;
             if (provider.googleMode === "cloud-code-assist") {
               debugGoogleToolCallSignature(part, toolCallsStarted, "buffered");

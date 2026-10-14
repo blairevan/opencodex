@@ -2127,23 +2127,49 @@ async function handleResponsesInner(
     delete logCtx.accountLogLabel;
   }
   const adapter = resolveAdapter(adapterProvider, config.cacheRetention);
-  const googleThoughtSignatureScope = adapter.name === "google"
-    && route.provider.googleMode === "cloud-code-assist"
-    ? createGoogleThoughtSignatureScope({
-      destination: route.provider.baseUrl,
-      project: route.provider.project ?? "",
-      account: antigravityPoolAccountId ?? replayOAuthCredentialSnapshot?.accountId ?? "",
-      wireModel: resolveAntigravityEffortWireModel(
-        parsed.modelId,
-        mapReasoningEffort(route.provider, parsed.modelId, parsed.options.reasoning),
-      ).wireModelId,
-      conversation: req.headers.get("x-codex-parent-thread-id")?.trim()
-        || sessionIdHeaderFromRequest(req.headers)?.trim()
-        || req.headers.get("thread-id")?.trim()
-        || "",
-    })
-    : undefined;
-  if (googleThoughtSignatureScope) restoreGoogleThoughtSignatures(googleThoughtSignatureScope, parsed.context.messages);
+  let googleThoughtSignatureScope: ReturnType<typeof createGoogleThoughtSignatureScope>;
+  let googleSignatureRouteIdentity: string | undefined;
+  /** Rebind exact-call state to the serving account before every rebuilt Google attempt. */
+  const bindGoogleThoughtSignatureScope = (target: OcxParsedRequest): void => {
+    const account = antigravityPoolAccountId ?? replayOAuthCredentialSnapshot?.accountId ?? "";
+    const nextRouteIdentity = adapter.name === "google" && route.provider.googleMode === "cloud-code-assist"
+      ? JSON.stringify([route.provider.baseUrl, route.provider.project, account, target.modelId])
+      : undefined;
+    const nextScope = adapter.name === "google"
+      && route.provider.googleMode === "cloud-code-assist"
+      ? createGoogleThoughtSignatureScope({
+        destination: route.provider.baseUrl,
+        project: route.provider.project ?? "",
+        account,
+        wireModel: resolveAntigravityEffortWireModel(
+          target.modelId,
+          mapReasoningEffort(route.provider, target.modelId, target.options.reasoning),
+        ).wireModelId,
+        conversation: req.headers.get("x-codex-parent-thread-id")?.trim()
+          || sessionIdHeaderFromRequest(req.headers)?.trim()
+          || req.headers.get("thread-id")?.trim()
+          || "",
+      })
+      : undefined;
+    if (googleSignatureRouteIdentity && googleSignatureRouteIdentity !== nextRouteIdentity) {
+      // A signature is provider/account-owned. Never carry ledger-restored state or client
+      // signature metadata from the rejected account into a different serving account.
+      for (const message of target.context.messages) {
+        if (message.role !== "assistant") continue;
+        for (const part of message.content) {
+          if (part.type !== "toolCall") continue;
+          delete part.googleOriginalFunctionCall;
+          delete part.thoughtSignature;
+          if (part.providerMetadata?.google) delete part.providerMetadata.google;
+        }
+      }
+    }
+    googleThoughtSignatureScope = nextScope;
+    googleSignatureRouteIdentity = nextRouteIdentity;
+    target._googleThoughtSignatureScope = nextScope;
+    restoreGoogleThoughtSignatures(nextScope, target.context.messages);
+  };
+  bindGoogleThoughtSignatureScope(parsed);
   const rememberGoogleResponseSignatures = (response: Record<string, unknown>): void => {
     if (!googleThoughtSignatureScope || !Array.isArray(response.output)) return;
     if (response.status === "completed") {
@@ -3581,6 +3607,7 @@ async function handleResponsesInner(
     const rebuildAndRefetch = async (
       recovery: AttemptRecoveryKind,
     ): Promise<Response | { failed: Response }> => {
+      bindGoogleThoughtSignatureScope(parsed);
       let retryRequest: AdapterRequest;
       if (sameTargetRequest !== undefined && sameTargetParsed === parsed && sameTargetToken === transportToken) {
         // Same target (key/adapter/parsed/tier unchanged): replay the exact cached request.
@@ -3946,6 +3973,7 @@ async function handleResponsesInner(
         continuationRequest = sameTargetRequest;
       } else {
         try {
+          bindGoogleThoughtSignatureScope(nextParsed);
           continuationRequest = await activeAdapter.buildRequest(nextParsed, {
             headers: selectedForwardHeaders,
             translatorBudget,

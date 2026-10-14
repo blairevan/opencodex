@@ -23,6 +23,8 @@ export interface OcxReasoningReplayScopeRef {
 
 export interface OcxParsedRequest {
   modelId: string;
+  /** Private route/account/conversation scope for exact Google tool-call continuation. */
+  _googleThoughtSignatureScope?: { key: string };
   /** Client-facing model selector retained for Anthropic routes after wire-model normalization. */
   _responseModelId?: string;
   /** Selected OpenAI API virtual-model id retained after it rewrites the upstream wire model. */
@@ -187,6 +189,8 @@ export interface OcxToolCall {
    * being matched by name/arguments after the fact.
    */
   providerMetadata?: OcxProviderOpaqueToolCallMetadata;
+  /** Server-restored Google call, bound to this exact call id and signature; never parsed from client metadata. */
+  googleOriginalFunctionCall?: { name: string; arguments: Record<string, unknown> };
   /** MCP namespace (e.g. "mcp__context7") when this call targets a namespaced tool. */
   namespace?: string;
 }

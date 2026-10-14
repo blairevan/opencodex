@@ -156,6 +156,7 @@ describe("#1735 thought signature survives history replay", () => {
       tools: [{ type: "custom", name: "exec", description: "run shell input" }],
     });
     const firstAdapter = createGoogleAdapter(antigravityProvider);
+    first._clientThreadId = "fixture-exec-history";
     await firstAdapter.buildRequest(first);
     await firstAdapter.parseResponse!(new Response(JSON.stringify({
       response: googleBody([
@@ -175,6 +176,7 @@ describe("#1735 thought signature survives history replay", () => {
       ],
       tools: [{ type: "custom", name: "exec", description: "run shell input" }],
     });
+    followup._clientThreadId = "fixture-exec-history";
     const request = await createGoogleAdapter(antigravityProvider).buildRequest(followup);
     const envelope = JSON.parse(request.body as string) as {
       request?: { contents?: Array<{ role?: string; parts?: Record<string, unknown>[] }> };
@@ -182,6 +184,28 @@ describe("#1735 thought signature survives history replay", () => {
     const parts = envelope.request?.contents?.find(content => content.role === "model")?.parts ?? [];
     const functionCallPart = parts.find(part => "functionCall" in part);
     expect(functionCallPart?.thoughtSignature).toBe(SIGNATURE);
+  });
+
+  test("headerless legacy replay never sends one account's signature to another account", async () => {
+    const first = parseRequest({ model: CCA_MODEL, input: "run pwd" });
+    const adapter = createGoogleAdapter(antigravityProvider);
+    await adapter.buildRequest(first);
+    await adapter.parseResponse!(new Response(JSON.stringify({ response: googleBody([
+      { functionCall: { name: "exec", args: { input: "pwd" } }, thoughtSignature: SIGNATURE },
+    ]) })));
+    const followup = parseRequest({
+      model: CCA_MODEL,
+      input: [
+        { role: "user", content: "run pwd" },
+        { type: "custom_tool_call", call_id: "call-headerless", name: "exec", input: "pwd" },
+        { type: "custom_tool_call_output", call_id: "call-headerless", output: "ok" },
+      ],
+    });
+    for (const overrides of [{}, { apiKey: "other-account-fixture" }, { project: "other-project-fixture" }, { baseUrl: "https://daily-cloudcode-pa.googleapis.com" }]) {
+      const request = await createGoogleAdapter({ ...antigravityProvider, ...overrides }).buildRequest(followup);
+      const envelope = JSON.parse(request.body as string) as { request: { contents: Array<{ parts: Array<{ functionCall?: unknown; thoughtSignature?: string }> }> } };
+      expect(envelope.request.contents.flatMap(content => content.parts).find(part => part.functionCall)?.thoughtSignature).toBeUndefined();
+    }
   });
 
   test("a signature replayed through Responses history reaches the rebuilt Google part", async () => {

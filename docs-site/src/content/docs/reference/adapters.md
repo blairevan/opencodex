@@ -109,6 +109,13 @@ of the HTTP retry loop.
   opaque `thoughtSignature` values so tool-result continuations retain Gemini reasoning continuity.
   The signature cache is snapshotted to the config directory, so continuations also survive proxy
   restarts.
+- Antigravity additionally retains the original signed tool-call arguments by exact call id,
+  scoped to the route, account, model, and conversation. This keeps custom-tool input conversion
+  from changing a signed call on continuation, even when the client omits provider metadata.
+  The private `google-thought-signatures.json` snapshot can contain tool inputs; treat it as
+  sensitive local state. Entries expire after one hour and original calls are capped at 64 KiB.
+  Clients without a stable thread/session header must replay provider metadata themselves;
+  Antigravity does not share a signature cache based only on matching first-message text.
 - **Inline image output:** when the model is one of the explicit image-capable chat IDs
   (`gemini-3.1-flash-image`, `gemini-2.0-flash-preview-image-generation`, or
   `gemini-3-pro-image-preview`), the adapter sends `responseModalities: ["TEXT", "IMAGE"]`.

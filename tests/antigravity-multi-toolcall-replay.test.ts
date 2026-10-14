@@ -3,9 +3,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import { createGoogleAdapter as createGoogleAdapterProduction } from "../src/adapters/google";
 import {
   __resetAntigravityReplayCache,
-  applyAntigravityReplay,
 } from "../src/adapters/google-antigravity-replay";
-import { antigravitySessionId } from "../src/adapters/google-antigravity-wire";
 import type { AdapterEvent, OcxParsedRequest, OcxProviderConfig } from "../src/types";
 import { withTestTranslatorBudget } from "./helpers/translator-budget";
 
@@ -30,6 +28,7 @@ describe("parallel streaming tool-call thought-signature preservation", () => {
     const adapter = createGoogleAdapter(provider);
     const parsedRequest = {
       modelId: MODEL,
+      _clientThreadId: "fixture-parallel-stream",
       stream: true,
       context: {
         messages: [{ role: "user", content: "run multiple commands" }],
@@ -69,20 +68,16 @@ describe("parallel streaming tool-call thought-signature preservation", () => {
     }
 
     // Verify replay cache can re-inject into follow-up request contents
-    const followupContents = [
-      {
-        role: "model",
-        parts: [1, 2, 3, 4, 5].map(i => ({
-          functionCall: { name: "default_api__exec", args: { cmd: "cmd_" + i } },
-        })),
-      },
-    ];
+    parsedRequest.context.messages.push({ role: "assistant", content: [1, 2, 3, 4, 5].map(i => ({
+      type: "toolCall", id: `call-${i}`, name: "default_api__exec", arguments: { cmd: "cmd_" + i },
+    })) });
+    const replay = await createGoogleAdapter(provider).buildRequest(parsedRequest);
+    const envelope = JSON.parse(replay.body as string) as { request: { contents: Array<{ role: string; parts: Array<{ thoughtSignature?: string }> }> } };
+    const parts = envelope.request.contents.find(content => content.role === "model")?.parts ?? [];
 
-    applyAntigravityReplay("gemini-3.7-flash-tiered", antigravitySessionId(parsedRequest), followupContents);
-
-    expect((followupContents[0].parts[0] as { thoughtSignature?: string }).thoughtSignature).toBe(SIG);
+    expect(parts[0]?.thoughtSignature).toBe(SIG);
     for (let i = 1; i < 5; i++) {
-      expect((followupContents[0].parts[i] as { thoughtSignature?: string }).thoughtSignature).toBeUndefined();
+      expect(parts[i]?.thoughtSignature).toBeUndefined();
     }
   });
 });

@@ -6,6 +6,8 @@ import {
   clearGoogleThoughtSignatureLedgerForTests,
   createGoogleThoughtSignatureScope,
   rememberGoogleThoughtSignatures,
+  rememberGoogleOriginalToolCall,
+  flushGoogleThoughtSignatures,
   resetGoogleThoughtSignatureLedgerMemoryForTests,
   restoreGoogleThoughtSignatures,
   setGoogleThoughtSignatureSnapshotPathForTests,
@@ -33,6 +35,51 @@ const scope = () => createGoogleThoughtSignatureScope({
 afterEach(() => clearGoogleThoughtSignatureLedgerForTests());
 
 describe("Google thought-signature ledger", () => {
+  test("flushes quote-heavy original arguments within the aggregate persistence budget", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "ocx-google-signatures-quotes-"));
+    setGoogleThoughtSignatureSnapshotPathForTests(join(directory, "ledger.json"));
+    try {
+      for (let index = 0; index < 260; index++) {
+        rememberGoogleOriginalToolCall(scope(), `call-quoted-${index}`, SIGNATURE, "exec", { code: '"'.repeat(30_000) });
+      }
+      await expect(flushGoogleThoughtSignatures()).resolves.toBeUndefined();
+      resetGoogleThoughtSignatureLedgerMemoryForTests();
+      const messages = [call("call-quoted-259")];
+      expect(restoreGoogleThoughtSignatures(scope(), messages)).toBe(1);
+      expect(messages[0]?.content[0]).toHaveProperty("googleOriginalFunctionCall");
+    } finally {
+      clearGoogleThoughtSignatureLedgerForTests();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+  test("preserves original arguments when completion updates the signature-only output", () => {
+    rememberGoogleOriginalToolCall(scope(), "call-original", SIGNATURE, "exec", { code: "text(1);" });
+    rememberGoogleThoughtSignatures(scope(), [{
+      type: "custom_tool_call", call_id: "call-original",
+      extra_content: { google: { thought_signature: SIGNATURE } },
+    }]);
+    const messages = [call("call-original")];
+    restoreGoogleThoughtSignatures(scope(), messages);
+    expect(messages[0]?.content[0]).toMatchObject({
+      googleOriginalFunctionCall: { name: "exec", arguments: { code: "text(1);" } },
+    });
+  });
+
+  test("does not restore another call's original arguments or overwrite a conflicting signature", () => {
+    rememberGoogleOriginalToolCall(scope(), "call-original", SIGNATURE, "exec", { code: "text(1);" });
+    const messages = [call("call-other"), call("call-original", { google: { thoughtSignature: "different-signature" } })];
+    expect(restoreGoogleThoughtSignatures(scope(), messages)).toBe(0);
+    for (const message of messages) expect(message.content[0]).not.toHaveProperty("googleOriginalFunctionCall");
+  });
+
+  test("keeps signature-only recovery when the original argument snapshot exceeds its byte bound", () => {
+    rememberGoogleOriginalToolCall(scope(), "call-large", SIGNATURE, "exec", { code: "x".repeat(65 * 1024) });
+    const messages = [call("call-large")];
+    expect(restoreGoogleThoughtSignatures(scope(), messages)).toBe(1);
+    expect(messages[0]?.content[0]).not.toHaveProperty("googleOriginalFunctionCall");
+    expect(messages[0]?.content[0]).toMatchObject({ providerMetadata: { google: { thoughtSignature: SIGNATURE } } });
+  });
+
   test("restores by exact Responses call id even when arguments are identical", () => {
     rememberGoogleThoughtSignatures(scope(), [{
       type: "custom_tool_call",

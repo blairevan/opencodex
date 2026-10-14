@@ -537,6 +537,14 @@ first-user-message derivation for clients that omit it; only the fixed hash is r
 Both streaming and non-streaming responses feed the store; request compilation happens before replay
 so matching uses the provider-visible tool name.
 
+Antigravity's exact-call-id ledger also captures the original name and arguments at the adapter
+response boundary, before custom-tool input unwrapping. Request rebuilding restores this call
+alongside its signature instead of deriving provider arguments from the client-facing input.
+Signature-only completion updates preserve the original call when the signature is unchanged;
+conflicting signatures and foreign scopes never receive it. The existing private snapshot and
+aggregate memory bounds cover these records, with a separate 64 KiB original-call limit. These
+snapshots can contain tool inputs and are sensitive local state, not diagnostic logs.
+
 [Decision Log]
 - 목적과 의도: Preserve Vertex Gemini tool-call continuation without exposing opaque signatures to Codex or another Google backend.
 - 기존 구현 및 제약 조건: Responses history does not carry a safe Gemini signature field; Antigravity already used a bounded in-process replay cache, while Vertex bypassed it and received HTTP 400 after the first tool call.

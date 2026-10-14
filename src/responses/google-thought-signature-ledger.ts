@@ -10,6 +10,7 @@ const TTL_MS = 60 * 60 * 1_000;
 const MAX_ENTRIES = 4_096;
 const MAX_BYTES = 16 * 1024 * 1024;
 const MAX_SIGNATURE_BYTES = 64 * 1024;
+const MAX_ORIGINAL_CALL_BYTES = 64 * 1024;
 const SNAPSHOT_MAX_BYTES = 20 * 1024 * 1024;
 const SNAPSHOT_DEBOUNCE_MS = 2_000;
 const SYNTHETIC_ID = /^(?:fc|ctc|tsc)[_-]/i;
@@ -19,6 +20,7 @@ interface LedgerEntry {
   signature: string;
   updatedAt: number;
   sizeBytes: number;
+  originalCall?: string;
 }
 
 export interface GoogleThoughtSignatureScope {
@@ -101,7 +103,7 @@ function ensureLoaded(): void {
       if (typeof value.key !== "string" || !/^[a-f0-9]{64}$/.test(value.key)
         || !validSignature(value.signature) || typeof value.updatedAt !== "number"
         || !Number.isFinite(value.updatedAt) || Date.now() - value.updatedAt >= TTL_MS) continue;
-      insertEntry(value.key, value.signature, value.updatedAt, false);
+      insertEntry(value.key, value.signature, value.updatedAt, false, originalCallJson(value.originalCall));
     }
   } catch {
     // Snapshot state is an optimization. Invalid or unreadable state never blocks a request.
@@ -109,13 +111,15 @@ function ensureLoaded(): void {
 }
 
 /** Insert a validated entry and enforce oldest-first count and byte limits. */
-function insertEntry(key: string, signature: string, updatedAt: number, persist: boolean): void {
-  const sizeBytes = Buffer.byteLength(key, "utf8") + Buffer.byteLength(signature, "utf8") + 64;
-  if (sizeBytes > MAX_BYTES) return;
+function insertEntry(key: string, signature: string, updatedAt: number, persist: boolean, originalCall?: string): void {
   const previous = entries.get(key);
+  const retainedCall = originalCall ?? (previous?.signature === signature ? previous.originalCall : undefined);
+  const sizeBytes = Buffer.byteLength(key, "utf8") + Buffer.byteLength(signature, "utf8")
+    + Buffer.byteLength(retainedCall ?? "", "utf8") + 64;
+  if (sizeBytes > MAX_BYTES) return;
   if (previous) totalBytes -= previous.sizeBytes;
   entries.delete(key);
-  entries.set(key, { key, signature, updatedAt, sizeBytes });
+  entries.set(key, { key, signature, updatedAt, sizeBytes, ...(retainedCall ? { originalCall: retainedCall } : {}) });
   totalBytes += sizeBytes;
   while (entries.size > MAX_ENTRIES || totalBytes > MAX_BYTES) {
     const oldestKey = entries.keys().next().value as string | undefined;
@@ -125,6 +129,42 @@ function insertEntry(key: string, signature: string, updatedAt: number, persist:
     if (oldest) totalBytes -= oldest.sizeBytes;
   }
   if (persist) schedulePersist();
+}
+
+/** Validate a bounded original call without accepting arbitrary client metadata or unbounded snapshots. */
+function originalCallJson(value: unknown): string | undefined {
+  try {
+    const serialized = typeof value === "string" ? value : JSON.stringify(value);
+    if (typeof serialized !== "string" || Buffer.byteLength(serialized, "utf8") > MAX_ORIGINAL_CALL_BYTES) return undefined;
+    const call: unknown = JSON.parse(serialized);
+    if (!call || typeof call !== "object" || Array.isArray(call)) return undefined;
+    const candidate = call as Record<string, unknown>;
+    if (typeof candidate.name !== "string" || !candidate.name || candidate.name.length > 512
+      || !candidate.arguments || typeof candidate.arguments !== "object" || Array.isArray(candidate.arguments)) return undefined;
+    return serialized;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Capture provider-owned arguments before the bridge unwraps a custom-tool input. */
+export function rememberGoogleOriginalToolCall(
+  scope: GoogleThoughtSignatureScope | undefined,
+  callId: string,
+  signature: string | undefined,
+  name: string,
+  args: unknown,
+): void {
+  if (!scope || !validCallId(callId) || !validSignature(signature)) return;
+  let originalCall: string | undefined;
+  try {
+    originalCall = originalCallJson(JSON.stringify({ name, arguments: args ?? {} }));
+  } catch {
+    // Invalid provider arguments must not crash response parsing; signature-only recovery remains available.
+  }
+  ensureLoaded();
+  insertEntry(entryKey(scope, callId), signature, Date.now(), true, originalCall);
+  enforceAppOwnedMemoryBudget();
 }
 
 /** Schedule an atomic snapshot write after a short debounce. */
@@ -181,14 +221,20 @@ export function restoreGoogleThoughtSignatures(
     if (message.role !== "assistant") continue;
     for (const part of message.content) {
       if (part.type !== "toolCall" || !validCallId(part.id)) continue;
-      if (part.providerMetadata?.google?.thoughtSignature) continue;
       const entry = entries.get(entryKey(scope, part.id));
       if (!entry || !validSignature(entry.signature)) continue;
+      const existing = part.providerMetadata?.google?.thoughtSignature;
+      if (existing && existing !== entry.signature) continue;
+      if (existing && !entry.originalCall) continue;
       const metadata: OcxProviderOpaqueToolCallMetadata = {
         ...part.providerMetadata,
         google: { ...part.providerMetadata?.google, thoughtSignature: entry.signature },
       };
       part.providerMetadata = metadata;
+      if (entry.originalCall) {
+        // Only server-owned, validated snapshots reach this field. Client extra_content cannot set it.
+        part.googleOriginalFunctionCall = JSON.parse(entry.originalCall) as NonNullable<typeof part.googleOriginalFunctionCall>;
+      }
       entry.updatedAt = Date.now();
       entries.delete(entry.key);
       entries.set(entry.key, entry);
@@ -222,7 +268,11 @@ export async function flushGoogleThoughtSignatures(): Promise<void> {
   }
   const path = snapshotPath();
   if (entries.size === 0 && !existsSync(path)) return;
-  const content = JSON.stringify({ version: 1, entries: [...entries.values()].map(({ key, signature, updatedAt }) => ({ key, signature, updatedAt })) });
+  // Store the validated JSON value, not a JSON string of JSON: double escaping can exceed
+  // the snapshot cap even when every record fits within the aggregate retained-byte limit.
+  const content = JSON.stringify({ version: 1, entries: [...entries.values()].map(({ key, signature, updatedAt, originalCall }) => ({
+    key, signature, updatedAt, ...(originalCall ? { originalCall: JSON.parse(originalCall) as unknown } : {}),
+  })) });
   persistGate = persistGate.catch(() => undefined).then(async () => {
     if (Buffer.byteLength(content, "utf8") > SNAPSHOT_MAX_BYTES) throw new Error("Google signature snapshot exceeded its size cap");
     await atomicWriteFileAsync(path, content);

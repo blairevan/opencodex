@@ -587,18 +587,22 @@ describe("antigravity parseResponse unwraps response (non-streaming)", () => {
   });
 
   test("non-streaming observes thoughtSignatures so the next turn can replay them", async () => {
-    const { __resetAntigravityReplayCache, applyAntigravityReplay } = await import("../src/adapters/google-antigravity-replay");
+    const { __resetAntigravityReplayCache } = await import("../src/adapters/google-antigravity-replay");
     __resetAntigravityReplayCache();
     const adapter = createGoogleAdapter(provider);
     // buildRequest first to set the per-adapter model/session, then parseResponse to observe.
-    await adapter.buildRequest(parsed("hello world"));
+    const initial = parsed("hello world");
+    initial._clientThreadId = "fixture-nonstream-replay";
+    await adapter.buildRequest(initial);
     const body = JSON.stringify({ response: { candidates: [{ content: { parts: [{ functionCall: { name: "do_x", args: { a: 1 } }, thoughtSignature: "sig-nonstream0000000" } ] } }] } });
     await adapter.parseResponse!(new Response(body, { status: 200 }));
     // A follow-up request's history should now get the signature re-injected.
     const followup = parsed("hello world");
-    const contents = [{ role: "model", parts: [{ functionCall: { name: "do_x", args: { a: 1 } } }] }];
-    applyAntigravityReplay("gemini-3-pro", antigravitySessionId(followup), contents);
-    expect((contents[0].parts[0] as { thoughtSignature?: string }).thoughtSignature).toBe("sig-nonstream0000000");
+    followup._clientThreadId = "fixture-nonstream-replay";
+    followup.context.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "call-followup", name: "do_x", arguments: { a: 1 } }] });
+    const replay = await createGoogleAdapter(provider).buildRequest(followup);
+    const envelope = JSON.parse(replay.body as string) as { request: { contents: Array<{ role: string; parts: Array<{ thoughtSignature?: string }> }> } };
+    expect(envelope.request.contents.find(content => content.role === "model")?.parts[0]?.thoughtSignature).toBe("sig-nonstream0000000");
   });
 
   test("non-streaming propagates a thought signature only to the first parallel function call", async () => {
@@ -637,10 +641,12 @@ describe("antigravity parseResponse unwraps response (non-streaming)", () => {
   // thought part with a signed function call is the direct proof, rather than inferring it
   // from unrelated fixtures that happen to still pass.
   test("a thought part alongside a signed function call does not disturb replay", async () => {
-    const { __resetAntigravityReplayCache, applyAntigravityReplay } = await import("../src/adapters/google-antigravity-replay");
+    const { __resetAntigravityReplayCache } = await import("../src/adapters/google-antigravity-replay");
     __resetAntigravityReplayCache();
     const adapter = createGoogleAdapter(provider);
-    await adapter.buildRequest(parsed("hello world"));
+    const initial = parsed("hello world");
+    initial._clientThreadId = "fixture-thought-replay";
+    await adapter.buildRequest(initial);
     const body = JSON.stringify({
       response: {
         candidates: [{
@@ -658,9 +664,11 @@ describe("antigravity parseResponse unwraps response (non-streaming)", () => {
     expect(events).not.toContainEqual({ type: "text_delta", text: "deciding which tool to call" });
 
     const followup = parsed("hello world");
-    const contents = [{ role: "model", parts: [{ functionCall: { name: "do_x", args: { a: 1 } } }] }];
-    applyAntigravityReplay("gemini-3-pro", antigravitySessionId(followup), contents);
-    expect((contents[0].parts[0] as { thoughtSignature?: string }).thoughtSignature).toBe("sig-withthought00000");
+    followup._clientThreadId = "fixture-thought-replay";
+    followup.context.messages.push({ role: "assistant", content: [{ type: "toolCall", id: "call-followup", name: "do_x", arguments: { a: 1 } }] });
+    const replay = await createGoogleAdapter(provider).buildRequest(followup);
+    const envelope = JSON.parse(replay.body as string) as { request: { contents: Array<{ role: string; parts: Array<{ thoughtSignature?: string }> }> } };
+    expect(envelope.request.contents.find(content => content.role === "model")?.parts[0]?.thoughtSignature).toBe("sig-withthought00000");
   });
 });
 
