@@ -540,6 +540,9 @@ so matching uses the provider-visible tool name.
 Antigravity's exact-call-id ledger also captures the original name and arguments at the adapter
 response boundary, before custom-tool input unwrapping. Request rebuilding restores this call
 alongside its signature instead of deriving provider arguments from the client-facing input.
+The streaming adapter keeps the first unsigned function call pending until the current response
+step's trailing thought-signature delta arrives, then records the exact call id and original call
+in the ledger. Parallel calls after that first call do not inherit the signature.
 Signature-only completion updates preserve the original call when the signature is unchanged;
 conflicting signatures and foreign scopes never receive it. The existing private snapshot and
 aggregate memory bounds cover these records, with a separate 64 KiB original-call limit. These

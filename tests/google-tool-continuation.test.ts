@@ -59,6 +59,71 @@ afterEach(() => {
 });
 
 describe("Google custom-tool continuation through HTTP", () => {
+  test("binds a trailing streaming signature delta to the function call from the preceding frame", async () => {
+    const requests: Array<{ request: { contents: Array<{ parts: Array<Record<string, unknown>> }> } }> = [];
+    globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!url.startsWith("https://daily-cloudcode-pa.googleapis.com/")) {
+        if (new URL(url).hostname === "127.0.0.1") return originalFetch(input, init);
+        throw new Error("Unexpected external request in split-signature continuation test");
+      }
+      const request = JSON.parse(String(init?.body)) as typeof requests[number];
+      requests.push(request);
+      if (requests.length === 1) {
+        const callFrame = { response: {
+          candidates: [{ content: { role: "model", parts: [{ functionCall: { name: "exec", args: ORIGINAL_ARGS } }] } }],
+        } };
+        const signatureFrame = { response: {
+          candidates: [{ content: { role: "model", parts: [{ thought: true, thoughtSignature: SIGNATURE }] }, finishReason: "STOP" }],
+          usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 },
+        } };
+        return new Response(`data: ${JSON.stringify(callFrame)}\n\ndata: ${JSON.stringify(signatureFrame)}\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      const replayed = request.request.contents.flatMap(content => content.parts).find(part => part.functionCall);
+      if (replayed?.thoughtSignature !== SIGNATURE) {
+        return Response.json({ error: { message: "Function call is missing a thought_signature" } }, { status: 400 });
+      }
+      return Response.json({ response: {
+        candidates: [{ content: { role: "model", parts: [{ text: "Recovered." }] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 },
+      } });
+    }, { preconnect: originalFetch.preconnect });
+
+    const server = startServer(0);
+    try {
+      const tools = [{ type: "custom", name: "exec", description: "Execute JavaScript source." }];
+      const headers = { "content-type": "application/json", "session_id": "fixture-split-signature-thread" };
+      const first = await fetch(new URL("/v1/responses", server.url), {
+        method: "POST", headers,
+        body: JSON.stringify({ model: `google-antigravity/${MODEL}`, input: "Run a tool", tools, stream: true }),
+      });
+      expect(first.status).toBe(200);
+      const payload = await first.text();
+      type ToolItem = { type: string; name: string; call_id: string; input: string };
+      const completed = payload.split("\n").filter(line => line.startsWith("data: {")).map(line => JSON.parse(line.slice(6)) as {
+        type: string; response?: { output: ToolItem[] };
+      }).find(frame => frame.type === "response.completed")?.response;
+      const call = completed?.output.find(item => item.type === "custom_tool_call");
+      if (!call) throw new Error("Expected a completed custom-tool call");
+
+      const second = await fetch(new URL("/v1/responses", server.url), {
+        method: "POST", headers,
+        body: JSON.stringify({ model: `google-antigravity/${MODEL}`, tools, stream: false, input: [
+          { role: "user", content: "Run a tool" },
+          { type: "custom_tool_call", call_id: call.call_id, name: call.name, input: call.input },
+          { type: "custom_tool_call_output", call_id: call.call_id, output: "done" },
+        ] }),
+      });
+
+      expect(second.status).toBe(200);
+      expect(requests).toHaveLength(2);
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   test("records a failover account's signed call under the serving account rather than the rejected account", async () => {
     saveConfig({ ...loadConfig(), antigravityAccountPool: { enabled: true, strategy: "fill-first" } });
     writeFileSync(join(directory, "auth.json"), JSON.stringify({

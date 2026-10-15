@@ -107,6 +107,8 @@ of the HTTP retry loop.
   `functionDeclarations`. Data-URL images → `inline_data`.
 - Tool-call ids are synthesized when Gemini omits them. Vertex and Antigravity preserve and replay
   opaque `thoughtSignature` values so tool-result continuations retain Gemini reasoning continuity.
+  Streaming responses also bind a signature delta that arrives after the function-call frame back
+  to that step's first function call, matching Google's streamed Gemini protocol.
   The signature cache is snapshotted to the config directory, so continuations also survive proxy
   restarts.
 - Antigravity additionally retains the original signed tool-call arguments by exact call id,

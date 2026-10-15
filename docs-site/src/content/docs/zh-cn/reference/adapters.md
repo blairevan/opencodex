@@ -86,7 +86,8 @@ interface ProviderAdapter {
   `functionDeclarations`；data URL 图像 → `inline_data`。
 - Gemini 省略 tool-call id 时会合成 id。Vertex 与 Antigravity 会保留并重放不透明
   `thoughtSignature`，使 tool-result 后续 turn 保持 reasoning continuity。签名缓存会快照到配置
-  目录，因此代理重启后后续 turn 仍可继续。
+  目录，因此代理重启后后续 turn 仍可继续。流式响应中，即使签名 delta 晚于 function-call
+  帧到达，也会绑定回该 step 的第一个函数调用，与 Google 的 Gemini 流式协议保持一致。
 - Antigravity 还会按精确调用 ID 保存原始签名工具参数，并按路由、账号、模型和会话隔离。
   即使客户端省略 provider metadata，自定义工具输入转换也不会改写后续请求中的原始签名调用。
   私有快照 `google-thought-signatures.json` 可能包含工具输入，应视为敏感本地状态；条目一小时

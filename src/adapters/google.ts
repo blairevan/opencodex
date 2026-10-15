@@ -659,6 +659,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
       let sawTerminalSignal = false;
       let streamLastThoughtSignature: string | undefined;
       let streamFunctionCallSignatureAssigned = false;
+      let pendingGoogleToolCall: { id: string; name: string; args: unknown } | undefined;
 
       const handleDataLine = async function* (line: string): AsyncGenerator<AdapterEvent, "continue" | "content" | "terminate"> {
         const payload = line.slice(5).trim();
@@ -757,6 +758,21 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           );
           streamLastThoughtSignature = propagated.lastSignature;
           streamFunctionCallSignatureAssigned = propagated.functionCallSignatureAssigned;
+          if (pendingGoogleToolCall) {
+            const trailingSignature = parts
+              .map(part => googleThoughtSignatureFromPart(part as Record<string, unknown>)?.signature)
+              .find((signature): signature is string => typeof signature === "string");
+            if (trailingSignature) {
+              rememberGoogleOriginalToolCall(
+                googleSignatureScope,
+                pendingGoogleToolCall.id,
+                trailingSignature,
+                pendingGoogleToolCall.name,
+                pendingGoogleToolCall.args,
+              );
+              pendingGoogleToolCall = undefined;
+            }
+          }
         }
         // Record Gemini thought signatures for the next stateless tool-result turn. Vertex and
         // Antigravity use separate model namespaces so opaque provider state cannot cross routes.
@@ -790,9 +806,18 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             }
             if (part.functionCall) {
               const id = `call_${crypto.randomUUID().slice(0, 8)}`;
-              rememberGoogleOriginalToolCall(googleSignatureScope, id,
-                googleThoughtSignatureFromPart(part as Record<string, unknown>)?.signature,
-                restoreGoogleToolName(part.functionCall.name), part.functionCall.args);
+              const restoredName = restoreGoogleToolName(part.functionCall.name);
+              const signature = googleThoughtSignatureFromPart(part as Record<string, unknown>)?.signature;
+              rememberGoogleOriginalToolCall(
+                googleSignatureScope,
+                id,
+                signature,
+                restoredName,
+                part.functionCall.args,
+              );
+              if (!signature && toolCallsStarted === 0) {
+                pendingGoogleToolCall = { id, name: restoredName, args: part.functionCall.args };
+              }
               toolCallsStarted++;
               if (provider.googleMode === "cloud-code-assist") {
                 debugGoogleToolCallSignature(part, toolCallsStarted, "stream");
@@ -801,7 +826,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
               yield {
                 type: "tool_call_start",
                 id,
-                name: restoreGoogleToolName(part.functionCall.name),
+                name: restoredName,
                 ...googleToolCallMetadataFromPart(part),
               };
               yield { type: "tool_call_delta", arguments: JSON.stringify(part.functionCall.args ?? {}) };
