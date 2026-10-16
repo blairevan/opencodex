@@ -175,7 +175,7 @@ describe("Google custom-tool continuation through HTTP", () => {
       const tool = body.output.find(item => item.type === "custom_tool_call");
       if (!tool) throw new Error("Expected a serving-account tool call");
       expect(servingProjects).toEqual(["fixture-account", "fixture-alternate"]);
-      expect(historySignatures).toEqual(["prior-account-signature", undefined]);
+      expect(historySignatures).toEqual(["prior-account-signature", "skip_thought_signature_validator"]);
       for (const account of ["fixture-account", "fixture-alternate"]) {
         const scope = createGoogleThoughtSignatureScope({
           destination: "https://daily-cloudcode-pa.googleapis.com", account, project: account,

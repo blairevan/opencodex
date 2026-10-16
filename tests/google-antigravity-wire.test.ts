@@ -721,6 +721,34 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
     expect(calls[1]?.thoughtSignature).toBeUndefined();
   });
 
+  test("falls back to ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE when no tool call in turn has a signature", async () => {
+    const p = {
+      modelId: "gemini-3-pro",
+      stream: false,
+      context: {
+        messages: [
+          { role: "user", content: "run both" },
+          {
+            role: "assistant",
+            content: [
+              { type: "toolCall", id: "c1", name: "exec", namespace: "default_api", arguments: { cmd: "one" } },
+              { type: "toolCall", id: "c2", name: "exec", namespace: "default_api", arguments: { cmd: "two" } },
+            ],
+          },
+        ],
+        systemPrompt: [], tools: [],
+      },
+      options: {},
+    } as unknown as OcxParsedRequest;
+    const req = await createGoogleAdapter(provider).buildRequest(p);
+    const env = JSON.parse(req.body);
+    const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
+    const calls = modelTurn?.parts.filter(part => "functionCall" in part) ?? [];
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.thoughtSignature).toBe("skip_thought_signature_validator");
+    expect(calls[1]?.thoughtSignature).toBeUndefined();
+  });
+
   test("a synthetic Responses item id (fc_...) is NOT forwarded as a thoughtSignature", async () => {
     const p = {
       modelId: "gemini-3-pro",
@@ -738,7 +766,7 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
     const env = JSON.parse(req.body);
     const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
     const fcPart = modelTurn?.parts.find(part => "functionCall" in part);
-    expect(fcPart?.thoughtSignature).toBeUndefined();
+    expect(fcPart?.thoughtSignature).toBe("skip_thought_signature_validator");
   });
 
   test("synthetic ids cannot bypass the final wire guard through providerMetadata", async () => {
@@ -764,7 +792,7 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
     const env = JSON.parse(req.body);
     const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
     const fcPart = modelTurn?.parts.find(part => "functionCall" in part);
-    expect(fcPart?.thoughtSignature).toBeUndefined();
+    expect(fcPart?.thoughtSignature).toBe("skip_thought_signature_validator");
   });
 
   test("custom_tool_call item ids (ctc_...) from Claude/mixed history are NOT forwarded (issue #174)", async () => {
@@ -784,7 +812,7 @@ describe("antigravity history preserves tool-call thoughtSignature", () => {
     const env = JSON.parse(req.body);
     const modelTurn = (env.request.contents as { role: string; parts: Record<string, unknown>[] }[]).find(c => c.role === "model");
     const fcPart = modelTurn?.parts.find(part => "functionCall" in part);
-    expect(fcPart?.thoughtSignature).toBeUndefined();
+    expect(fcPart?.thoughtSignature).toBe("skip_thought_signature_validator");
   });
 });
 

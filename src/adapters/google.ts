@@ -25,6 +25,7 @@ import { isVertexTruncatedTurn, vertexTruncationErrorMessage } from "./google-tr
 import {
   ANTIGRAVITY_REQUEST_UA,
   antigravitySessionId,
+  ensureAntigravityFunctionCallSignatures,
   googleThoughtSignatureFingerprint,
   googleThoughtSignatureFromPart,
   isLikelyRealThoughtSignature,
@@ -572,6 +573,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           } else {
             sanitizeAntigravityClaudeSignatures(contents);
           }
+          ensureAntigravityFunctionCallSignatures(contents);
         }
         const envelope = {
           model: wireModelId,

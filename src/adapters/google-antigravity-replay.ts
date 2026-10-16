@@ -5,7 +5,7 @@ import { atomicWriteFileAsync, getConfigDir, type AtomicWriteAsyncTestSeam } fro
 import { enforceAppOwnedMemoryBudget } from "../lib/app-owned-memory";
 import { debugProviderDiagnostic } from "../lib/debug";
 import { isDebugEnabled } from "../lib/debug-settings";
-import { googleThoughtSignatureFingerprint, googleThoughtSignatureFromPart } from "./google-antigravity-wire";
+import { ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE, googleThoughtSignatureFingerprint, googleThoughtSignatureFromPart } from "./google-antigravity-wire";
 
 /**
  * Google-family thoughtSignature reasoning-replay cache.
@@ -723,7 +723,7 @@ export function applyAntigravityReplay(model: string, sessionId: string, content
       if (!fc) continue;
       functionCallIndex++;
       const existingSignature = googleThoughtSignatureFromPart(part);
-      if (existingSignature) {
+      if (existingSignature && existingSignature.signature !== ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE) {
         if (debugEnabled) {
           debugProviderDiagnostic("google-antigravity", "thought-signature-replay", {
             session_key: key.slice(0, 12),

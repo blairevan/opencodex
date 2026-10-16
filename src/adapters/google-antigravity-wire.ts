@@ -13,6 +13,15 @@ import { antigravityUserAgent } from "./client-fingerprint";
 export const ANTIGRAVITY_REQUEST_UA = process.env.GOOGLE_ANTIGRAVITY_USER_AGENT || antigravityUserAgent();
 
 /**
+ * Sentinel thought signature value recognized by Google Antigravity backend to bypass
+ * signature validation when an authentic signature is unavailable.
+ *
+ * Discovered via reverse engineering Antigravity Tools (`antigravity_tools`, Rust) and
+ * Google's Antigravity Language Server (`language_server`, Go).
+ */
+export const ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+
+/**
  * Whether a stored `OcxToolCall.thoughtSignature` is a REAL upstream Gemini signature versus a
  * foreign id that must not be forwarded to Gemini/Antigravity.
  *
@@ -30,6 +39,7 @@ export const ANTIGRAVITY_REQUEST_UA = process.env.GOOGLE_ANTIGRAVITY_USER_AGENT 
  */
 export function isLikelyRealThoughtSignature(sig: string | undefined): boolean {
   if (typeof sig !== "string" || sig.length < 16) return false;
+  if (sig === ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE) return false;
   // Reject synthetic Responses/tool-call ids and Anthropic tool-use ids (`_` or `-` separators).
   if (isSyntheticToolCallIdLike(sig)) return false;
   // Real Gemini thought signatures observed so far are base64/base64url-like. Keep this heuristic
@@ -181,6 +191,34 @@ export function sanitizeAntigravityClaudeSignatures(contents: unknown[]): unknow
     }
     // Model turn: drop thinking blocks lacking a valid signature.
     raw.parts = raw.parts.filter(part => !(part.thought === true && !hasSignature(part)));
+  }
+  return contents;
+}
+
+/**
+ * Ensure every model turn containing functionCall parts has a valid thoughtSignature on its
+ * first functionCall. If no functionCall in the turn has an existing signature, inject the
+ * official Antigravity skip validator sentinel (`skip_thought_signature_validator`).
+ *
+ * Matches the official Antigravity Tools App behavior:
+ * `[Tool-Signature] Adding GEMINI_SKIP_SIGNATURE for tool_use: skip_thought_signature_validator`
+ */
+export function ensureAntigravityFunctionCallSignatures(contents: unknown[]): unknown[] {
+  if (!Array.isArray(contents)) return contents;
+  for (const raw of contents as GeminiContent[]) {
+    if (!raw || typeof raw !== "object" || raw.role !== "model" || !Array.isArray(raw.parts)) continue;
+    let firstFunctionCallPart: GeminiPart | undefined;
+    let turnHasSignature = false;
+    for (const part of raw.parts) {
+      if (!part || typeof part !== "object" || !part.functionCall) continue;
+      if (!firstFunctionCallPart) firstFunctionCallPart = part;
+      if (hasSignature(part)) {
+        turnHasSignature = true;
+      }
+    }
+    if (firstFunctionCallPart && !turnHasSignature) {
+      firstFunctionCallPart.thoughtSignature = ANTIGRAVITY_SKIP_THOUGHT_SIGNATURE;
+    }
   }
   return contents;
 }

@@ -204,7 +204,7 @@ describe("#1735 thought signature survives history replay", () => {
     for (const overrides of [{}, { apiKey: "other-account-fixture" }, { project: "other-project-fixture" }, { baseUrl: "https://daily-cloudcode-pa.googleapis.com" }]) {
       const request = await createGoogleAdapter({ ...antigravityProvider, ...overrides }).buildRequest(followup);
       const envelope = JSON.parse(request.body as string) as { request: { contents: Array<{ parts: Array<{ functionCall?: unknown; thoughtSignature?: string }> }> } };
-      expect(envelope.request.contents.flatMap(content => content.parts).find(part => part.functionCall)?.thoughtSignature).toBeUndefined();
+      expect(envelope.request.contents.flatMap(content => content.parts).find(part => part.functionCall)?.thoughtSignature).toBe("skip_thought_signature_validator");
     }
   });
 
@@ -244,5 +244,21 @@ describe("#1735 thought signature survives history replay", () => {
     const request = await createGoogleAdapter(provider).buildRequest(parsed);
     const part = modelParts(request.body as string).find(candidate => "functionCall" in candidate);
     expect(part?.thoughtSignature).toBeUndefined();
+  });
+
+  test("Antigravity history without a signature falls back to skip validator sentinel", async () => {
+    const parsed = parseRequest({
+      model: CCA_MODEL,
+      input: [
+        { type: "message", role: "user", content: [{ type: "input_text", text: "run pwd" }] },
+        { type: "function_call", call_id: "call_shell_1", name: "shell_command", arguments: JSON.stringify({ command: "pwd" }) },
+        { type: "function_call_output", call_id: "call_shell_1", output: "/workspace" },
+      ],
+      tools: [{ type: "function", name: "shell_command", description: "run", parameters: { type: "object" } }],
+    });
+    const request = await createGoogleAdapter(antigravityProvider).buildRequest(parsed);
+    const envelope = JSON.parse(request.body as string) as { request: { contents: Array<{ parts: Array<{ functionCall?: unknown; thoughtSignature?: string }> }> } };
+    const part = envelope.request.contents.flatMap(content => content.parts).find(candidate => candidate.functionCall);
+    expect(part?.thoughtSignature).toBe("skip_thought_signature_validator");
   });
 });
