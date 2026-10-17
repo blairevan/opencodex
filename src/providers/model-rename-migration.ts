@@ -72,10 +72,17 @@ export const MODEL_RENAMES: readonly ModelRename[] = [
     "gemini-3-flash-agent"] as const).map(from => ({
     provider: "google-antigravity",
     from,
-    to: "gemini-3.7-flash",
+    to: "gemini-3.8-flash",
     reason: "Google retires the previous Antigravity Flash generation from Cloud Code Assist when its successor ships, so the saved id no longer resolves to a live model",
     // The retired Flash tiers were wire ids, so any saved per-model record keyed by one
     // may also hold one as a value. 3.7 expresses tiers as thinkingLevel names instead.
+    dropReasoningEffortMap: true,
+  })),
+  ...(["gemini-3.7-flash", "gemini-3.7-flash-low", "gemini-3.7-flash-medium", "gemini-3.7-flash-high", "gemini-3.1-pro"] as const).map(from => ({
+    provider: "google-antigravity",
+    from,
+    to: "gemini-3.8-flash",
+    reason: "Google retired 3.7 Flash and 3.1 Pro from Cloud Code Assist when 3.8 Flash shipped; the saved id no longer resolves to a live model",
     dropReasoningEffortMap: true,
   })),
 ];

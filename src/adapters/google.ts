@@ -68,6 +68,7 @@ const GOOGLE_BREVITY_INSTRUCTION = [
 const GEMINI_DIRECT_WIRE_RENAMES: Record<string, string> = {
   "gemini-3.7-flash": "gemini-3.7-flash-tiered",
   "gemini-3.6-flash": "gemini-3.6-flash-tiered",
+  "gemini-3.8-flash": "gemini-3.8-flash-tiered",
 };
 
 function resolveDirectGeminiWireModelId(modelId: string): string {
