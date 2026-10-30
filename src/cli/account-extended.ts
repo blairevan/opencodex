@@ -582,12 +582,29 @@ export async function cmdClearCooldown(args: string[], deps: AccountDeps): Promi
   if (!name || !requestedId || args.length) return usage();
   const classified = configAndType(deps, name);
   if ("error" in classified) return usage(`Error: ${classified.error}`);
-  if (classified.type !== "codex") {
-    return usage(`Error: ${name} is not a Codex account pool; cooldown clearing applies to Codex accounts only`);
+  if (classified.type !== "codex" && classified.type !== "oauth") {
+    return usage(`Error: ${name} is not a Codex or OAuth account pool; cooldown clearing applies to Codex, google-antigravity, and anthropic only`);
   }
-  const id = requestedId === "main" ? MAIN_ID : requestedId;
   const baseUrl = await resolveBaseUrl(deps);
   if (!baseUrl) return proxyUnreachable();
+
+  if (classified.type === "oauth") {
+    if (name !== "google-antigravity" && name !== "anthropic") {
+      return usage(`Error: clear-cooldown is only supported for anthropic and google-antigravity`);
+    }
+    const response = await apiJson(deps, baseUrl, "POST", "/api/oauth/accounts/clear-cooldown", {
+      provider: name,
+      accountId: requestedId,
+    });
+    if (response.status === 0) return proxyUnreachable();
+    if (response.status !== 200) return apiError(response.json, `failed to clear cooldown for ${requestedId}`);
+    const cleared = response.json?.cleared === true;
+    if (wantsJson) console.log(JSON.stringify({ ok: true, provider: name, id: requestedId, cleared }, null, 2));
+    else if (cleared) console.log(`${name}: cooldown lifted for ${requestedId}`);
+    else console.log(`${name}: no active cooldown for ${requestedId}`);
+    return 0;
+  }
+  const id = requestedId === "main" ? MAIN_ID : requestedId;
   const response = await apiJson(deps, baseUrl, "POST", "/api/codex-auth/accounts/clear-cooldown", { id });
   if (response.status === 0) return proxyUnreachable();
   if (response.status !== 200) return apiError(response.json, `failed to clear cooldown for ${requestedId}`);
