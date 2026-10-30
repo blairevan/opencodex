@@ -213,6 +213,31 @@ describe("antigravity-routing", () => {
     expect(snap?.cooldownUntil).toBe(weeklyResetAt + 5 * 60_000);
   });
 
+  test("falls back to 60s default cooldown when 429 occurs without quota exhaustion (<90%)", () => {
+    const now = 1_000_000;
+    setCachedProviderAccountQuotaForTests("google-antigravity", "acc-1", {
+      customWindows: [
+        { label: "Gemini (5h)", percent: 15, resetAt: now + 3 * 60 * 60_000 },
+        { label: "Gemini (Weekly)", percent: 30, resetAt: now + 5 * 24 * 60 * 60_000 },
+      ],
+      updatedAt: now,
+    });
+
+    rotateAntigravityAccountOn429(
+      configPoolEnabled,
+      "acc-1",
+      undefined,
+      "s-quota-low",
+      "gemini-3.8-flash",
+      now,
+    );
+
+    const snap = getAntigravityAccountHealthSnapshot("acc-1", now);
+    expect(snap).not.toBeNull();
+    expect(snap?.cooldownSource).toBe("default");
+    expect(snap?.cooldownUntil).toBe(now + 60_000);
+  });
+
   test("extracts session key from parts", () => {
     const key = antigravitySessionKeyFromParts({ clientThreadId: "thread-abc-123" });
     expect(key).toBe("thread-abc-123");

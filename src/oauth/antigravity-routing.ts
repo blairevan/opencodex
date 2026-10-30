@@ -25,8 +25,8 @@ import { sweepExpiredOnWrite } from "../lib/state-store-sweeper";
 import { retainedUtf8Bytes } from "../lib/admission";
 
 const PROVIDER = "google-antigravity";
-/** Fallback cooldown when neither Retry-After nor quota resetAt is available: 5 h default window. */
-const DEFAULT_COOLDOWN_MS = 5 * 60 * 60_000;
+/** Fallback cooldown when neither Retry-After nor quota resetAt is available: 60 s default window. */
+const DEFAULT_COOLDOWN_MS = 60_000;
 /** Extra safety buffer added on top of quota resetAt to avoid edge-timing rate-limits (5 min). */
 const BUFFER_COOLDOWN_MS = 5 * 60_000;
 /** Hard cap on cooldowns (allows weekly reset windows up to 7 days). */
@@ -185,8 +185,6 @@ function resolveQuotaDerivedCooldownMs(
   const windows = matched.length > 0 ? matched : quota.customWindows;
 
   let maxFullUsageResetAt: number | undefined;
-  let highestPercent = Number.NEGATIVE_INFINITY;
-  let highestPercentResetAt: number | undefined;
 
   for (const win of windows) {
     if (typeof win.resetAt === "number" && Number.isFinite(win.resetAt) && win.resetAt > now) {
@@ -196,16 +194,11 @@ function resolveQuotaDerivedCooldownMs(
           maxFullUsageResetAt = win.resetAt;
         }
       }
-      if (pct > highestPercent) {
-        highestPercent = pct;
-        highestPercentResetAt = win.resetAt;
-      }
     }
   }
 
-  const targetResetAt = maxFullUsageResetAt ?? highestPercentResetAt;
-  if (targetResetAt && targetResetAt > now) {
-    const remainingMs = targetResetAt - now;
+  if (maxFullUsageResetAt && maxFullUsageResetAt > now) {
+    const remainingMs = maxFullUsageResetAt - now;
     const cooldownWithBuffer = remainingMs + BUFFER_COOLDOWN_MS;
     return Math.min(Math.max(cooldownWithBuffer, 1_000), MAX_COOLDOWN_MS);
   }
