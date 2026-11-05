@@ -244,7 +244,7 @@ export function assessUrlDestination(url: string): UrlDestinationAssessment | nu
  */
 export async function resolvePublicAddresses(
   url: string,
-  options?: string | { context?: string; allowPrivateNetwork?: boolean },
+  options?: string | { context?: string; allowPrivateNetwork?: boolean; allowBenchmarkAddresses?: boolean },
 ): Promise<{
   hostname: string;
   addresses: { address: string; family: number }[];
@@ -254,6 +254,7 @@ export async function resolvePublicAddresses(
     ? `${options.trim() || "image"} URL`
     : options?.context?.trim() || "image URL";
   const privateNetworkAllowed = typeof options === "object" && options?.allowPrivateNetwork === true;
+  const benchmarkAddressesAllowed = typeof options === "object" && options?.allowBenchmarkAddresses === true;
   let hostname: string;
   try {
     hostname = normalizeHostname(new URL(url.trim()).hostname);
@@ -294,6 +295,13 @@ export async function resolvePublicAddresses(
     const ipKind = isIP(address) || (family === 4 || family === 6 ? family : 0);
     const assessment = ipKind === 4 ? classifyIpv4(address) : ipKind === 6 ? classifyIpv6(normalizeHostname(address)) : null;
     if (!assessment || assessment.kind !== "public") {
+      const allowedBenchmark = benchmarkAddressesAllowed
+        && assessment?.kind === "private"
+        && assessment?.detail === "benchmark address";
+      if (allowedBenchmark) {
+        validatedAddresses.push({ address, family: ipKind === 4 || ipKind === 6 ? ipKind : (family || 4) });
+        continue;
+      }
       const allowedPrivateAddress = privateNetworkAllowed
         && assessment
         && (assessment.kind === "loopback" || assessment.kind === "private");
