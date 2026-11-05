@@ -59,7 +59,7 @@ describe("antigravity CCA envelope", () => {
     // The exact default must not drift: Google gates models by family AND version,
     // so any change to version/platform could silently re-lock gemini-3.7-flash.
     expect(req.headers["User-Agent"]).toBe(
-      "antigravity/ide/2.5.5 (aidev_client; os_type=windows; arch=amd64)",
+      "antigravity/ide/2.29.0 (aidev_client; os_type=windows; arch=amd64)",
     );
     // The literal "antigravity" giveaway UA must no longer be sent.
     expect(req.headers["User-Agent"]).not.toBe("antigravity");
@@ -80,6 +80,10 @@ describe("antigravity CCA envelope", () => {
     // Collapsed picker: base models only.
     expect(ANTIGRAVITY_MODELS).toEqual([
       "gemini-3.8-flash",
+      "gemini-4-argon",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "gemini-3.1-flash-lite",
       "gemini-3.1-flash-image",
       "claude-sonnet-4-6",
       "claude-opus-4-6-thinking",
@@ -500,6 +504,54 @@ describe("antigravity CCA envelope", () => {
     const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gpt-oss-120b-medium", "high"));
     const env = JSON.parse(req.body);
     expect(env.model).toBe("gpt-oss-120b-medium");
+    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+  });
+  test("gemini-4-argon with effort=high routes to gemini-4-argon-high without thinkingConfig", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "high"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-high");
+    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+  });
+
+  test("gemini-4-argon with effort=low routes to gemini-4-argon-low without thinkingConfig", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "low"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-low");
+    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+  });
+
+  test("gemini-4-argon with no effort defaults to medium", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-medium");
+    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+  });
+
+  test("claude-sonnet-5-5 with effort=low routes to claude-sonnet-5-5-low", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("claude-sonnet-5-5", "low"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("claude-sonnet-5-5-low");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("low");
+  });
+
+  test("claude-sonnet-5-5 with no effort defaults to high", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("claude-sonnet-5-5"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("claude-sonnet-5-5-high");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("high");
+  });
+
+  test("claude-opus-5-5 with effort=medium routes to claude-opus-5-5-medium", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("claude-opus-5-5", "medium"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("claude-opus-5-5-medium");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
+  });
+
+  test("gemini-3.1-flash-lite passes wire ID directly", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-3.1-flash-lite"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-3.1-flash-lite");
     expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
   });
 });
