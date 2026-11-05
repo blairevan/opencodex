@@ -56,6 +56,13 @@ export async function fetchGoogleWithRetry(label: string, request: AdapterReques
           continue;
         }
       }
+      if (res.status === 404 && label === "Antigravity" && activeRequest.url.includes("daily-cloudcode-pa.googleapis.com")) {
+        const prodUrl = activeRequest.url.replace("daily-cloudcode-pa.googleapis.com", "cloudcode-pa.googleapis.com");
+        cancelResponseBodyBestEffort(res);
+        activeRequest = { ...activeRequest, url: prodUrl };
+        attempt--;
+        continue;
+      }
       if (!retryableGoogleStatus(res.status) || attempt === GOOGLE_RETRY_ATTEMPTS - 1) {
         return ctx.returnRawErrors ? res : normalizeFinalGoogleError(label, res, ctx.abortSignal);
       }
