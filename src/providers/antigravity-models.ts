@@ -71,6 +71,7 @@ export function argonAntigravityTier(modelId: string): string | undefined {
 }
 
 const ANTIGRAVITY_WIRE_MODELS = [
+  "gemini-4-argon",
   "gemini-3.8-flash-tiered",
   "gemini-3.1-flash-lite",
   "gemini-3.1-flash-image",
@@ -150,7 +151,7 @@ const ANTIGRAVITY_THINKING_LEVELS = new Set(["low", "medium", "high"]);
  */
 const ANTIGRAVITY_PICKER_TO_WIRE: Record<string, string> = {
   "gemini-3.8-flash": GEMINI_FLASH_WIRE_ID,
-  "gemini-4-argon": GEMINI_FLASH_WIRE_ID,
+  "gemini-4-argon": "gemini-4-argon",
 };
 
 /** Map a picker-visible base model to its CCA wire ID. Identity when no mapping exists. */
@@ -178,7 +179,7 @@ const ANTIGRAVITY_COMPATIBILITY_MODEL_ALIASES: Record<string, string> = {
     Object.keys(RETIRED_FLASH_TIERS).map(retired => [retired, GEMINI_FLASH_WIRE_ID]),
   ),
   ...Object.fromEntries(
-    Object.keys(ARGON_TIERS).map(argon => [argon, GEMINI_FLASH_WIRE_ID]),
+    Object.keys(ARGON_TIERS).map(argon => [argon, "gemini-4-argon"]),
   ),
 };
 
@@ -375,11 +376,11 @@ export function resolveAntigravityEffortWireModel(
   modelId: string,
   effort?: string,
 ): { wireModelId: string; thinkingLevel?: string } {
-  // Rule -1: Argon model tier mapping — Antigravity routes Argon to tiered Flash with corresponding level.
+  // Rule -1: Argon model tier mapping — Antigravity resolves suffixed tiers to canonical gemini-4-argon.
   const argonTier = argonAntigravityTier(modelId);
   if (argonTier) {
     return {
-      wireModelId: GEMINI_FLASH_WIRE_ID,
+      wireModelId: "gemini-4-argon",
       thinkingLevel: effort ? resolveAntigravityThinkingLevel(effort) ?? argonTier : argonTier,
     };
   }
