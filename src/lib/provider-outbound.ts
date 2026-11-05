@@ -148,6 +148,7 @@ async function providerOutboundRequest(
     resolved = await resolveAddresses(url, {
       context: "provider URL",
       allowPrivateNetwork: allowPrivate,
+      allowBenchmarkAddresses: proxyConfigured,
     });
   } catch (error) {
     const dnsResolutionFailed = error instanceof DestinationDnsResolutionError

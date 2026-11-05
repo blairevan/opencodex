@@ -200,4 +200,16 @@ describe("resolvePublicAddresses — caller-specific diagnostics", () => {
     expect(resolved.privateNetwork).toBe(true);
     expect(resolved.addresses).toEqual([{ address: "192.168.1.50", family: 4 }]);
   });
+
+  test("allows benchmark address (Clash/Shadowrocket Fake-IP) when allowBenchmarkAddresses is set without flagging privateNetwork", async () => {
+    lookupMock.mockResolvedValueOnce([{ address: "198.18.0.136", family: 4 }]);
+
+    const resolved = await resolvePublicAddresses(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      { context: "provider URL", allowBenchmarkAddresses: true },
+    );
+
+    expect(resolved.privateNetwork).toBe(false);
+    expect(resolved.addresses).toEqual([{ address: "198.18.0.136", family: 4 }]);
+  });
 });

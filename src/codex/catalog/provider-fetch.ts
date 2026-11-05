@@ -861,6 +861,12 @@ export const CALLABLE_CONFIGURED_COMPATIBILITY_MODELS: Readonly<Record<string, R
     "grok-build-0.1",
     "grok-composer-2.5-fast",
   ]),
+  "google-antigravity": new Set([
+    "gemini-4-argon",
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "gemini-3.1-flash-lite",
+  ]),
 };
 
 export function warnDroppedConfiguredIdsOnce(name: string, droppedConfiguredIds: string[]): void {
