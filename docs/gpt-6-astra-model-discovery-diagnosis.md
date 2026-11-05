@@ -48,7 +48,7 @@ CODEX_HOME="/tmp/clean-codex-home" /Applications/ChatGPT.app/Contents/Resources/
 ### 3.1 第一层阻断：桌面端模型目录被静态白名单剔除
 1. **目录劫持机制**：为了将三方路由模型（如 Claude 3.7、Gemini 3.8、Qwen 等）注入到 Codex Desktop，OpenCodex 在 `~/.codex/config.toml` 中注入了：
    ```toml
-   model_catalog_json = "/Users/zhuhaijun/.codex/opencodex-catalog.json"
+   model_catalog_json = "~/.codex/opencodex-catalog.json"
    openai_base_url = "http://127.0.0.1:10100/v1"
    ```
    这导致 Codex Desktop 放弃原生内置目录，强制读取磁盘上的 `opencodex-catalog.json`。

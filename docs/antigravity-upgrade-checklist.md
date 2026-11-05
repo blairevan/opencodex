@@ -64,18 +64,22 @@ ocx account refresh google-antigravity --json
    - `ANTIGRAVITY_WIRE_MODELS`：添加云端实际接收的 wire 模型 ID。
    - `ANTIGRAVITY_MODELS`：添加在 picker 中展示的基础模型 ID。
    - `ANTIGRAVITY_MODEL_EFFORTS`：为支持推理梯度的模型配置 `["low", "medium", "high", ...]`。
+   - **占位/过渡模型对齐规则**：当 Antigravity APP 客户端在 UI 中引入新代际模型（如 `gemini-4-argon`），但云端 CCA 尚未部署独立 wire 实体时，客户端在底层会将其映射至当前主力 Flash 线上传输 ID（如 `gemini-3.8-flash-tiered`），并携带相应 `thinkingLevel`。opencodex 必须配置 `ARGON_TIERS` 与 `ANTIGRAVITY_PICKER_TO_WIRE` 映射，保持与官方客户端一致的路由行为，防止直接向云端发送未开放实体导致 404 NOT_FOUND。
    - `ANTIGRAVITY_SUFFIXED_BASE_MODELS` 与 `resolveAntigravityEffortWireModel`：若新模型使用后缀 wire ID，定义默认档位与前缀映射。
    - `ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS` 与 `ANTIGRAVITY_MODEL_CONTEXT_WINDOWS`：填入对应的上下文窗口大小（如 1M tokens）。
    - `ANTIGRAVITY_MODEL_INPUT_MODALITIES`：配置输入模态（如 `["text", "image"]`）。
    - `ANTIGRAVITY_USAGE_BASE_BY_ID`：将带后缀的 wire 模型映射回基础模型，防止统计账单按子档位割裂。
 
-3. **默认模型策略确认**：
+3. **请求 Envelope 与信令头对齐**：
+   - 在 [src/adapters/google.ts](/opt/app/aitools/opencodex/src/adapters/google.ts:580) 中确认 CCA 封包格式，需携带 `enabledCreditTypes: ["GOOGLE_ONE_AI"]` 等第一方信令字段。
+
+4. **默认模型策略确认**：
    在 [src/providers/registry.ts](/opt/app/aitools/opencodex/src/providers/registry.ts:1459) 中，确认 `defaultModel` 是否需要调整或继续保持。
 
-4. **用量与定价推导**：
+5. **用量与定价推导**：
    在 [src/usage/expected-prices.ts](/opt/app/aitools/opencodex/src/usage/expected-prices.ts:108) 中为新模型添加预期价格覆盖项（通常标记为 `verified-derived`）。
 
-## 5. 验证与门禁检查
+## 6. 验证与门禁检查
 
 完成代码修改后，执行针对性测试与静态检查，确保无回归故障：
 
