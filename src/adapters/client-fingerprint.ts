@@ -41,8 +41,8 @@ export function claudeCodeSessionId(token: string | undefined): string {
 }
 
 // ── Antigravity IDE ──
-/** Pinned fallback Antigravity IDE language-server version (matches the bundled LS 2.5.5). */
-export const ANTIGRAVITY_IDE_VERSION = "2.5.5";
+/** Pinned fallback Antigravity IDE language-server version (matches the bundled LS 2.29.0). */
+export const ANTIGRAVITY_IDE_VERSION = "2.29.0";
 const ANTIGRAVITY_IDE_CLIENT_NAME = "aidev_client";
 const ANTIGRAVITY_IDE_PLATFORM = "windows/amd64";
 /** Secondary Google API client UA the Antigravity client library reports. */
@@ -50,7 +50,7 @@ export const ANTIGRAVITY_GOOG_API_CLIENT_UA = "google-api-nodejs-client/10.3.0";
 
 /**
  * The real Antigravity IDE User-Agent, e.g.
- * `antigravity/ide/2.5.5 (aidev_client; os_type=windows; arch=amd64)`.
+ * `antigravity/ide/2.29.0 (aidev_client; os_type=windows; arch=amd64)`.
  *
  * Must be the IDE client family, NOT `antigravity/cli/...`: the Cloud Code Assist backend gates
  * newer agent models (e.g. `gemini-3.7-flash`) by User-Agent and answers 404 NOT_FOUND to

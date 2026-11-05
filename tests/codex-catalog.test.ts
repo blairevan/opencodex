@@ -3259,7 +3259,7 @@ describe("Codex catalog routed normalization", () => {
 
     expect(fetchCalls).toBe(0);
     expect(ids).toEqual([...(provider.models ?? [])].sort());
-    expect(ids).toHaveLength(6);
+    expect(ids).toHaveLength(provider.models!.length);
     expect(getProviderDiscoveryStatus(providerName)).toBeUndefined();
 
     markProviderDiscoveryFailed(providerName, { reason: "http", httpStatus: 404 });

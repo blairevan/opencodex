@@ -53,8 +53,18 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
 };
 
 const ANTIGRAVITY_WIRE_MODELS = [
+  "gemini-4-argon-low",
+  "gemini-4-argon-medium",
+  "gemini-4-argon-high",
   "gemini-3.8-flash-tiered",
+  "gemini-3.1-flash-lite",
   "gemini-3.1-flash-image",
+  "claude-sonnet-5-5-low",
+  "claude-sonnet-5-5-medium",
+  "claude-sonnet-5-5-high",
+  "claude-opus-5-5-low",
+  "claude-opus-5-5-medium",
+  "claude-opus-5-5-high",
   "claude-sonnet-4-6",
   "claude-opus-4-6-thinking",
   "gpt-oss-120b-medium",
@@ -90,8 +100,21 @@ function pickerModelIdForDiscoveredWireId(
 // Claude models: effort → thinkingConfig.thinkingLevel (CLIProxyAPI proven pattern).
 export const ANTIGRAVITY_MODEL_EFFORTS: Record<string, string[]> = {
   "gemini-3.8-flash": ["low", "medium", "high"],
+  "gemini-4-argon": ["low", "medium", "high"],
+  "claude-sonnet-5-5": ["low", "medium", "high", "max"],
+  "claude-opus-5-5": ["low", "medium", "high", "max"],
   "claude-sonnet-4-6": ["low", "medium", "high", "max"],
   "claude-opus-4-6-thinking": ["low", "medium", "high", "max"],
+};
+
+/**
+ * Base models that map reasoning efforts to dedicated suffixed wire model IDs
+ * (e.g. gemini-4-argon-medium, claude-sonnet-5-5-high).
+ */
+const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; wirePrefix: string; isClaude?: boolean }> = {
+  "gemini-4-argon": { defaultEffort: "medium", wirePrefix: "gemini-4-argon" },
+  "claude-sonnet-5-5": { defaultEffort: "high", wirePrefix: "claude-sonnet-5-5", isClaude: true },
+  "claude-opus-5-5": { defaultEffort: "high", wirePrefix: "claude-opus-5-5", isClaude: true },
 };
 
 /**
@@ -148,6 +171,10 @@ export const ANTIGRAVITY_MODEL_ALIASES: Record<string, string> = {
 // Picker-visible: collapsed base models only.
 export const ANTIGRAVITY_MODELS = [
   GEMINI_FLASH_CURRENT,
+  "gemini-4-argon",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5",
+  "gemini-3.1-flash-lite",
   "gemini-3.1-flash-image",
   "claude-sonnet-4-6",
   "claude-opus-4-6-thinking",
@@ -186,6 +213,10 @@ export const ANTIGRAVITY_MODEL_INPUT_MODALITIES: Record<string, string[]> = {
   // catalog normalizes `input_modalities` against a closed enum. Advertising a modality
   // the wire cannot carry would be a promise we break at request time.
   "gemini-3.8-flash": ["text", "image"],
+  "gemini-4-argon": ["text", "image"],
+  "claude-sonnet-5-5": ["text", "image"],
+  "claude-opus-5-5": ["text", "image"],
+  "gemini-3.1-flash-lite": ["text", "image"],
   "gemini-3.1-flash-image": ["text", "image"],
   "claude-sonnet-4-6": ["text", "image"],
   "claude-opus-4-6-thinking": ["text", "image"],
@@ -351,6 +382,17 @@ export function resolveAntigravityEffortWireModel(
     };
   }
 
+  // Rule 2: base models with suffixed wire models for effort levels (gemini-4-argon, claude-5.5 series).
+  const suffixed = ANTIGRAVITY_SUFFIXED_BASE_MODELS[modelId];
+  if (suffixed) {
+    const level = effort ? resolveAntigravityThinkingLevel(effort) ?? suffixed.defaultEffort : suffixed.defaultEffort;
+    const wireModelId = `${suffixed.wirePrefix}-${level}`;
+    return {
+      wireModelId,
+      ...(suffixed.isClaude ? { thinkingLevel: level } : {}),
+    };
+  }
+
   // Rule 3: Claude models — effort via thinkingConfig only (no suffix variants).
   // CCA validates this field as Google's ThinkingLevel enum, whose highest value is `high`.
   if (/^claude-/.test(modelId) && effort) {
@@ -374,6 +416,11 @@ const ANTIGRAVITY_USAGE_BASE_BY_ID: Record<string, string> = (() => {
     if (base) rev[alias] = base;
     // If alias is itself a base/wire already mapped, keep that mapping.
     else if (rev[wire]) rev[alias] = rev[wire]!;
+  }
+  for (const [base, def] of Object.entries(ANTIGRAVITY_SUFFIXED_BASE_MODELS)) {
+    for (const effort of ["low", "medium", "high"]) {
+      rev[`${def.wirePrefix}-${effort}`] = base;
+    }
   }
   // Retired ids keep their OWN identity for usage aggregation, overriding the alias
   // pass above. Routing sends new 3.7 calls to 3.8, but a usage row written months ago
