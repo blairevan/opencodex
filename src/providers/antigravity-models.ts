@@ -52,10 +52,25 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
   "gemini-3.7-flash-high": "high",
 };
 
+/**
+ * Gemini 4 Argon reasoning tier mapping.
+ *
+ * Antigravity 2.29.0 exposes Gemini 4 Argon in its UI with low, medium, and high
+ * reasoning levels (defaulting to medium), but Google Cloud Code Assist routes
+ * these calls on the wire to the current Flash generation (`gemini-3.8-flash-tiered`)
+ * with the corresponding `thinkingLevel`.
+ */
+const ARGON_TIERS: Record<string, string> = {
+  "gemini-4-argon-low": "low",
+  "gemini-4-argon-medium": "medium",
+  "gemini-4-argon-high": "high",
+};
+
+export function argonAntigravityTier(modelId: string): string | undefined {
+  return Object.hasOwn(ARGON_TIERS, modelId) ? ARGON_TIERS[modelId] : undefined;
+}
+
 const ANTIGRAVITY_WIRE_MODELS = [
-  "gemini-4-argon-low",
-  "gemini-4-argon-medium",
-  "gemini-4-argon-high",
   "gemini-3.8-flash-tiered",
   "gemini-3.1-flash-lite",
   "gemini-3.1-flash-image",
@@ -109,10 +124,9 @@ export const ANTIGRAVITY_MODEL_EFFORTS: Record<string, string[]> = {
 
 /**
  * Base models that map reasoning efforts to dedicated suffixed wire model IDs
- * (e.g. gemini-4-argon-medium, claude-sonnet-5-5-high).
+ * (e.g. claude-sonnet-5-5-high).
  */
 const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; wirePrefix: string; isClaude?: boolean }> = {
-  "gemini-4-argon": { defaultEffort: "medium", wirePrefix: "gemini-4-argon" },
   "claude-sonnet-5-5": { defaultEffort: "high", wirePrefix: "claude-sonnet-5-5", isClaude: true },
   "claude-opus-5-5": { defaultEffort: "high", wirePrefix: "claude-opus-5-5", isClaude: true },
 };
@@ -123,6 +137,7 @@ const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; 
  */
 const ANTIGRAVITY_THINKING_LEVEL_MODELS: Record<string, string> = {
   "gemini-3.8-flash": "high",
+  "gemini-4-argon": "medium",
 };
 
 // `minimal` is deliberately absent: Google documents it as unsupported for the current
@@ -135,6 +150,7 @@ const ANTIGRAVITY_THINKING_LEVELS = new Set(["low", "medium", "high"]);
  */
 const ANTIGRAVITY_PICKER_TO_WIRE: Record<string, string> = {
   "gemini-3.8-flash": GEMINI_FLASH_WIRE_ID,
+  "gemini-4-argon": GEMINI_FLASH_WIRE_ID,
 };
 
 /** Map a picker-visible base model to its CCA wire ID. Identity when no mapping exists. */
@@ -160,6 +176,9 @@ const ANTIGRAVITY_COMPATIBILITY_MODEL_ALIASES: Record<string, string> = {
   // payload from republishing a dead wire id as a picker row.
   ...Object.fromEntries(
     Object.keys(RETIRED_FLASH_TIERS).map(retired => [retired, GEMINI_FLASH_WIRE_ID]),
+  ),
+  ...Object.fromEntries(
+    Object.keys(ARGON_TIERS).map(argon => [argon, GEMINI_FLASH_WIRE_ID]),
   ),
 };
 
@@ -356,6 +375,15 @@ export function resolveAntigravityEffortWireModel(
   modelId: string,
   effort?: string,
 ): { wireModelId: string; thinkingLevel?: string } {
+  // Rule -1: Argon model tier mapping — Antigravity routes Argon to tiered Flash with corresponding level.
+  const argonTier = argonAntigravityTier(modelId);
+  if (argonTier) {
+    return {
+      wireModelId: GEMINI_FLASH_WIRE_ID,
+      thinkingLevel: effort ? resolveAntigravityThinkingLevel(effort) ?? argonTier : argonTier,
+    };
+  }
+
   // Rule 0: retired Flash id — Google has taken the wire id offline, so route to the
   // current generation and carry the tier the retired id encoded. This runs BEFORE the
   // suffix check because those ids are aliases, and rule 1 would drop the tier.
@@ -421,6 +449,9 @@ const ANTIGRAVITY_USAGE_BASE_BY_ID: Record<string, string> = (() => {
     for (const effort of ["low", "medium", "high"]) {
       rev[`${def.wirePrefix}-${effort}`] = base;
     }
+  }
+  for (const effort of ["low", "medium", "high"]) {
+    rev[`gemini-4-argon-${effort}`] = "gemini-4-argon";
   }
   // Retired ids keep their OWN identity for usage aggregation, overriding the alias
   // pass above. Routing sends new 3.7 calls to 3.8, but a usage row written months ago

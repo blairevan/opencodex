@@ -475,7 +475,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
             mapReasoningEffort(provider, parsed.modelId, parsed.options.reasoning),
           ).wireModelId
         : resolveDirectGeminiWireModelId(parsed.modelId);
-      const { systemInstruction, contents } = messagesToGeminiFormat(parsed, routedModelId);
+      const { systemInstruction, contents } = messagesToGeminiFormat(parsed, parsed.modelId);
       const tools = toolsToGeminiFormat(parsed);
 
       const body: Record<string, unknown> = { contents };
@@ -585,6 +585,7 @@ export function createGoogleAdapter(provider: OcxProviderConfig): ProviderAdapte
           requestType: "agent",
           project,
           requestId: `agent-${crypto.randomUUID()}`,
+          enabledCreditTypes: ["GOOGLE_ONE_AI"],
           request,
         };
         headers["User-Agent"] = ANTIGRAVITY_REQUEST_UA;

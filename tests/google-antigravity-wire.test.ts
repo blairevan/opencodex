@@ -50,6 +50,7 @@ describe("antigravity CCA envelope", () => {
     expect(env.userAgent).toBe("antigravity");
     expect(env.requestType).toBe("agent");
     expect(env.project).toBe("proj-123");
+    expect(env.enabledCreditTypes).toEqual(["GOOGLE_ONE_AI"]);
     expect(env.requestId).toMatch(/^agent-/);
     expect(env.request.contents).toBeDefined();
     expect(env.request.sessionId).toMatch(/^-/);
@@ -506,25 +507,32 @@ describe("antigravity CCA envelope", () => {
     expect(env.model).toBe("gpt-oss-120b-medium");
     expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
   });
-  test("gemini-4-argon with effort=high routes to gemini-4-argon-high without thinkingConfig", async () => {
+  test("gemini-4-argon with effort=high routes to gemini-3.8-flash-tiered with thinkingConfig high", async () => {
     const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "high"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon-high");
-    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+    expect(env.model).toBe("gemini-3.8-flash-tiered");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("high");
   });
 
-  test("gemini-4-argon with effort=low routes to gemini-4-argon-low without thinkingConfig", async () => {
+  test("gemini-4-argon with effort=low routes to gemini-3.8-flash-tiered with thinkingConfig low", async () => {
     const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "low"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon-low");
-    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+    expect(env.model).toBe("gemini-3.8-flash-tiered");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("low");
   });
 
-  test("gemini-4-argon with no effort defaults to medium", async () => {
+  test("gemini-4-argon with no effort defaults to medium thinkingLevel on gemini-3.8-flash-tiered", async () => {
     const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon-medium");
-    expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
+    expect(env.model).toBe("gemini-3.8-flash-tiered");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
+  });
+
+  test("gemini-4-argon-medium alias routes to gemini-3.8-flash-tiered with medium thinkingLevel", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon-medium"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-3.8-flash-tiered");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
   });
 
   test("claude-sonnet-5-5 with effort=low routes to claude-sonnet-5-5-low", async () => {
