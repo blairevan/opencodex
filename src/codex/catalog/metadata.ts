@@ -58,6 +58,7 @@ export {
 
 export const DOCUMENTED_NATIVE_OPENAI_ADDITIONS = [
   "gpt-6-astra",
+  "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna",
   "gpt-5.3-codex-spark",
   "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 ];
@@ -105,6 +106,10 @@ export const NATIVE_GPT56_CONTEXT_WINDOW = 372_000;
 
 export const NATIVE_OPENAI_CONTEXT_OVERRIDES: Record<string, { contextWindow?: number; maxContextWindow?: number }> = {
   "gpt-6-astra": { contextWindow: 272_000, maxContextWindow: 872_000 },
+  "gpt-6.1-sol": { contextWindow: 272_000, maxContextWindow: 872_000 },
+  "gpt-6.1-terra": { contextWindow: 500_000, maxContextWindow: 872_000 },
+  "gpt-6-sol": { contextWindow: 272_000, maxContextWindow: 872_000 },
+  "gpt-6-luna": { contextWindow: 272_000, maxContextWindow: 872_000 },
   "gpt-5.5": { contextWindow: 272_000, maxContextWindow: 272_000 },
   "gpt-5.4": { contextWindow: 1_000_000, maxContextWindow: 1_000_000 },
   "gpt-5.3-codex-spark": { contextWindow: 100_000, maxContextWindow: 100_000 },
