@@ -16,19 +16,19 @@ rea inspect-plist /Applications/Antigravity.app
 
 提取版本号后，检查 [src/adapters/client-fingerprint.ts](/opt/app/aitools/opencodex/src/adapters/client-fingerprint.ts:45) 中的 `ANTIGRAVITY_IDE_VERSION` 是否需要同步推进。
 
-## 2. 本地服务与通信参数探查
+## 2. 客户端启动参数与通信参数提取（rea 静态分析）
 
-Antigravity 采用 Electron 宿主结合本地 Go 编写的 `language_server` 架构，本地使用 ConnectRPC 协议通信。
+Antigravity 采用 Electron 宿主结合本地 Go 编写的 `language_server` 架构。可通过 `rea` 静态提取 `app.asar` 中的 `dist/languageServer.js`，检查 Electron 拉起 `language_server` 时的命令行参数（如 `--subclient_type`、`--override_ide_version`、`--cloud_code_endpoint`）：
 
 ```bash
-# 确认 language_server 进程参数与使用的云端端点
-ps aux | grep language_server | grep -v grep
-
-# 找到 language_server 正在监听的本地端口（查看 LISTEN 项）
-lsof -p $(pgrep -f "language_server.*antigravity" | head -n 1) | grep LISTEN
+# 使用 rea 分析与解包 app.asar
+rea analyze-javascript-application /Applications/Antigravity.app
+rea extract-artifact /Applications/Antigravity.app/Contents/Resources/app.asar
 ```
 
-启动参数中包含 `--csrf_token` 与 `--cloud_code_endpoint`，通常端点为 `https://daily-cloudcode-pa.googleapis.com`。
+重点检查 `dist/languageServer.js` 中的启动参数：
+- `--subclient_type`：2.31.0 起变更为 `hub`，对应 HTTP `User-Agent` 前缀 `antigravity/hub/<version> (aidev_client; os_type=<os>; arch=<arch>)`。若仍发送旧版 `antigravity/ide/<version>`，云端 `daily-cloudcode-pa.googleapis.com` 会在 `:fetchAvailableModels` 中隐藏 `gemini-4-carbon-*` 与 `gemini-4-argon-*`，且在 `:streamGenerateContent` 时返回 `404 NOT_FOUND`。
+- `--cloud_code_endpoint`：默认端点为 `https://daily-cloudcode-pa.googleapis.com`。
 
 ## 3. 模型矩阵与推荐列表核对
 
@@ -56,16 +56,18 @@ ocx account refresh google-antigravity --json
 
 如果确认有新模型加入或版本迭代，依次检查并修改下列文件：
 
-1. **版本指纹更新**：
-   在 [src/adapters/client-fingerprint.ts](/opt/app/aitools/opencodex/src/adapters/client-fingerprint.ts:45) 中更新 `ANTIGRAVITY_IDE_VERSION`。
+1. **版本与子客户端指纹更新**：
+   在 [src/adapters/client-fingerprint.ts](/opt/app/aitools/opencodex/src/adapters/client-fingerprint.ts:45) 中更新 `ANTIGRAVITY_IDE_VERSION` 与 `ANTIGRAVITY_IDE_SUBCLIENT`（如 `antigravity/hub/2.31.0`）。
 
 2. **模型注册与路由映射**：
    在 [src/providers/antigravity-models.ts](/opt/app/aitools/opencodex/src/providers/antigravity-models.ts:1) 中：
    - `ANTIGRAVITY_WIRE_MODELS`：添加云端实际接收的 wire 模型 ID。
    - `ANTIGRAVITY_MODELS`：添加在 picker 中展示的基础模型 ID。
    - `ANTIGRAVITY_MODEL_EFFORTS`：为支持推理梯度的模型配置 `["low", "medium", "high", ...]`。
-   - **单 Wire ID 档位折叠规则**：当 Antigravity APP 客户端在 UI 中将模型按 `-low`、`-medium`、`-high` 拆分为多个推理档位，但底层 `codeassistclient` 封包发往云端 CCA 时统一使用单一基础 Wire ID（如 `gemini-4-argon` 或 `gemini-3.8-flash-tiered`）并通过 `generationConfig.thinkingConfig.thinkingLevel` 传递思考强度时，opencodex 必须在 `ARGON_TIERS`、`ANTIGRAVITY_THINKING_LEVEL_MODELS` 与 `ANTIGRAVITY_PICKER_TO_WIRE` 中对齐该映射，避免直接将带档位后缀的模型名作为 Wire ID 发送至云端导致 404 NOT_FOUND。
-   - `ANTIGRAVITY_SUFFIXED_BASE_MODELS` 与 `resolveAntigravityEffortWireModel`：若新模型使用后缀 wire ID，定义默认档位与前缀映射。
+   - **单 Wire ID vs 带后缀 Wire ID 档位规则**：
+     - `gemini-3.8-flash` 使用单一 `-tiered` Wire ID（`gemini-3.8-flash-tiered`）配合 `generationConfig.thinkingConfig.thinkingLevel` 传递思考强度，在 `ANTIGRAVITY_THINKING_LEVEL_MODELS` 与 `ANTIGRAVITY_PICKER_TO_WIRE` 中配置。
+     - `gemini-4-carbon`、`gemini-4-argon` 与 `claude-5.5` 系列在 `daily-cloudcode-pa.googleapis.com` 上使用带后缀的独立 Wire ID（如 `gemini-4-carbon-{low,medium,high}`、`gemini-4-argon-{low,medium,high}`）并同时携带对应的 `thinkingLevel`，在 `CARBON_TIERS`、`ARGON_TIERS` 与 `ANTIGRAVITY_SUFFIXED_BASE_MODELS` 中配置。
+     - 非订阅等级可用的模型在 `:fetchAvailableModels` 中会返回 `*-disabled`（且 `disabled: true`），`parseAntigravityAvailableModels` 需过滤此类不可调用占位项。
    - `ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS` 与 `ANTIGRAVITY_MODEL_CONTEXT_WINDOWS`：填入对应的上下文窗口大小（如 1M tokens）。
    - `ANTIGRAVITY_MODEL_INPUT_MODALITIES`：配置输入模态（如 `["text", "image"]`）。
    - `ANTIGRAVITY_USAGE_BASE_BY_ID`：将带后缀的 wire 模型映射回基础模型，防止统计账单按子档位割裂。

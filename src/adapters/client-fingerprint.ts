@@ -41,8 +41,9 @@ export function claudeCodeSessionId(token: string | undefined): string {
 }
 
 // ── Antigravity IDE ──
-/** Pinned fallback Antigravity IDE language-server version (matches the bundled LS 2.29.0). */
-export const ANTIGRAVITY_IDE_VERSION = "2.29.0";
+/** Pinned fallback Antigravity IDE language-server version (matches the bundled LS 2.31.0). */
+export const ANTIGRAVITY_IDE_VERSION = "2.31.0";
+const ANTIGRAVITY_IDE_SUBCLIENT = "hub";
 const ANTIGRAVITY_IDE_CLIENT_NAME = "aidev_client";
 const ANTIGRAVITY_IDE_PLATFORM = "windows/amd64";
 /** Secondary Google API client UA the Antigravity client library reports. */
@@ -50,14 +51,15 @@ export const ANTIGRAVITY_GOOG_API_CLIENT_UA = "google-api-nodejs-client/10.3.0";
 
 /**
  * The real Antigravity IDE User-Agent, e.g.
- * `antigravity/ide/2.29.0 (aidev_client; os_type=windows; arch=amd64)`.
+ * `antigravity/hub/2.31.0 (aidev_client; os_type=windows; arch=amd64)`.
  *
- * Must be the IDE client family, NOT `antigravity/cli/...`: the Cloud Code Assist backend gates
- * newer agent models (e.g. `gemini-3.7-flash`) by User-Agent and answers 404 NOT_FOUND to
- * CLI-shaped UAs even with a valid OAuth token. Only `antigravity/ide/<ver>` unlocks them.
+ * Starting in Antigravity 2.31.0 (`dist/languageServer.js`), Electron spawns `language_server`
+ * with `--subclient_type hub --override_ide_version 2.31.0`. The Cloud Code Assist backend gates
+ * newer agent models (`gemini-4-carbon-*`, `gemini-4-argon-*`) behind the `hub` subclient family
+ * and answers 404 NOT_FOUND to legacy `antigravity/ide/...` or `antigravity/cli/...` UAs.
  * A `GOOGLE_ANTIGRAVITY_USER_AGENT` override (set by the caller) takes precedence upstream.
  */
 export function antigravityUserAgent(version = ANTIGRAVITY_IDE_VERSION): string {
   const [osType, arch] = ANTIGRAVITY_IDE_PLATFORM.split("/");
-  return `antigravity/ide/${version} (${ANTIGRAVITY_IDE_CLIENT_NAME}; os_type=${osType}; arch=${arch})`;
+  return `antigravity/${ANTIGRAVITY_IDE_SUBCLIENT}/${version} (${ANTIGRAVITY_IDE_CLIENT_NAME}; os_type=${osType}; arch=${arch})`;
 }
