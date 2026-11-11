@@ -108,6 +108,10 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
   // Google Antigravity effort-suffix variants — derived from the verified base-model
   // price (Google does not publish per-suffix prices; Agent inference bills at the
   // base model's standard rate per the official Billing FAQ).
+  { provider: "google-antigravity", modelId: "gemini-4-carbon", cost4: GEMINI_31_PRO, source: "derived: Gemini 4 Carbon promotional/standard rate", verifiedAt: "2026-11-11", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-4-carbon-low", cost4: GEMINI_31_PRO, source: "derived: Gemini 4 Carbon", verifiedAt: "2026-11-11", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-4-carbon-medium", cost4: GEMINI_31_PRO, source: "derived: Gemini 4 Carbon", verifiedAt: "2026-11-11", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-4-carbon-high", cost4: GEMINI_31_PRO, source: "derived: Gemini 4 Carbon", verifiedAt: "2026-11-11", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-4-argon", cost4: GEMINI_38_FLASH, source: "derived: Gemini 4 Argon promotional/standard rate", verifiedAt: "2026-11-05", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-4-argon-low", cost4: GEMINI_38_FLASH, source: "derived: Gemini 4 Argon", verifiedAt: "2026-11-05", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-4-argon-medium", cost4: GEMINI_38_FLASH, source: "derived: Gemini 4 Argon", verifiedAt: "2026-11-05", status: "verified-derived" },

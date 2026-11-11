@@ -60,7 +60,7 @@ describe("antigravity CCA envelope", () => {
     // The exact default must not drift: Google gates models by family AND version,
     // so any change to version/platform could silently re-lock gemini-3.7-flash.
     expect(req.headers["User-Agent"]).toBe(
-      "antigravity/ide/2.29.0 (aidev_client; os_type=windows; arch=amd64)",
+      "antigravity/hub/2.31.0 (aidev_client; os_type=windows; arch=amd64)",
     );
     // The literal "antigravity" giveaway UA must no longer be sent.
     expect(req.headers["User-Agent"]).not.toBe("antigravity");
@@ -81,6 +81,7 @@ describe("antigravity CCA envelope", () => {
     // Collapsed picker: base models only.
     expect(ANTIGRAVITY_MODELS).toEqual([
       "gemini-3.8-flash",
+      "gemini-4-carbon",
       "gemini-4-argon",
       "claude-sonnet-5-5",
       "claude-opus-5-5",
@@ -145,10 +146,31 @@ describe("antigravity CCA envelope", () => {
       "gemini-3.8-flash-high",
     ]))?.map(model => model.id)).toEqual(["gemini-3.8-flash"]);
     expect(parseAntigravityAvailableModels(payload([
+      "gemini-4-carbon-low",
+      "gemini-4-carbon-medium",
+      "gemini-4-carbon-high",
+    ]))?.map(model => model.id)).toEqual(["gemini-4-carbon"]);
+    expect(parseAntigravityAvailableModels(payload([
       "gemini-4-argon-low",
       "gemini-4-argon-medium",
       "gemini-4-argon-high",
     ]))?.map(model => model.id)).toEqual(["gemini-4-argon"]);
+    expect(parseAntigravityAvailableModels({
+      models: {
+        "gemini-4-carbon-disabled": { maxTokens: 1_048_576, disabled: true },
+        "gemini-4-argon-disabled": { maxTokens: 1_048_576, disabled: true },
+        "gemini-3.8-flash-low": { maxTokens: 1_048_576 },
+        "gemini-3.8-flash-medium": { maxTokens: 1_048_576 },
+        "gemini-3.8-flash-high": { maxTokens: 1_048_576 },
+      },
+      agentModelSorts: [{ groups: [{ modelIds: [
+        "gemini-4-carbon-disabled",
+        "gemini-4-argon-disabled",
+        "gemini-3.8-flash-low",
+        "gemini-3.8-flash-medium",
+        "gemini-3.8-flash-high",
+      ] }] }],
+    })?.map(model => model.id)).toEqual(["gemini-3.8-flash"]);
     expect(parseAntigravityAvailableModels(payload([
       "future-flash-low",
       "future-flash-medium",
@@ -512,31 +534,59 @@ describe("antigravity CCA envelope", () => {
     expect(env.model).toBe("gpt-oss-120b-medium");
     expect(env.request.generationConfig?.thinkingConfig).toBeUndefined();
   });
-  test("gemini-4-argon with effort=high routes to gemini-4-argon with thinkingConfig high", async () => {
-    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "high"));
+  test("gemini-4-carbon with effort=high routes to gemini-4-carbon-high with thinkingConfig high", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-carbon", "high"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon");
+    expect(env.model).toBe("gemini-4-carbon-high");
     expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("high");
   });
 
-  test("gemini-4-argon with effort=low routes to gemini-4-argon with thinkingConfig low", async () => {
-    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "low"));
+  test("gemini-4-carbon with effort=low routes to gemini-4-carbon-low with thinkingConfig low", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-carbon", "low"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon");
+    expect(env.model).toBe("gemini-4-carbon-low");
     expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("low");
   });
 
-  test("gemini-4-argon with no effort defaults to medium thinkingLevel on gemini-4-argon", async () => {
-    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon"));
+  test("gemini-4-carbon with no effort defaults to medium thinkingLevel on gemini-4-carbon-medium", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-carbon"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon");
+    expect(env.model).toBe("gemini-4-carbon-medium");
     expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
   });
 
-  test("gemini-4-argon-medium alias routes to gemini-4-argon with medium thinkingLevel", async () => {
+  test("gemini-4-carbon-medium alias routes to gemini-4-carbon-medium with medium thinkingLevel", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-carbon-medium"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-carbon-medium");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
+  });
+
+  test("gemini-4-argon with effort=high routes to gemini-4-argon-high with thinkingConfig high", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "high"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-high");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("high");
+  });
+
+  test("gemini-4-argon with effort=low routes to gemini-4-argon-low with thinkingConfig low", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon", "low"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-low");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("low");
+  });
+
+  test("gemini-4-argon with no effort defaults to medium thinkingLevel on gemini-4-argon-medium", async () => {
+    const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon"));
+    const env = JSON.parse(req.body);
+    expect(env.model).toBe("gemini-4-argon-medium");
+    expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
+  });
+
+  test("gemini-4-argon-medium alias routes to gemini-4-argon-medium with medium thinkingLevel", async () => {
     const req = await createGoogleAdapter(effortProvider).buildRequest(parsedWithEffort("gemini-4-argon-medium"));
     const env = JSON.parse(req.body);
-    expect(env.model).toBe("gemini-4-argon");
+    expect(env.model).toBe("gemini-4-argon-medium");
     expect(env.request.generationConfig?.thinkingConfig?.thinkingLevel).toBe("medium");
   });
 
@@ -882,6 +932,9 @@ describe("canonicalAntigravityUsageModel", () => {
     expect(canonicalAntigravityUsageModel("gemini-3.5-flash-mid")).toBe("gemini-3.5-flash-mid");
     expect(canonicalAntigravityUsageModel("gemini-3.6-flash-high")).toBe("gemini-3.6-flash-high");
     expect(canonicalAntigravityUsageModel("gemini-3.7-flash-high")).toBe("gemini-3.7-flash-high");
+    expect(canonicalAntigravityUsageModel("gemini-4-carbon-low")).toBe("gemini-4-carbon");
+    expect(canonicalAntigravityUsageModel("gemini-4-carbon-medium")).toBe("gemini-4-carbon");
+    expect(canonicalAntigravityUsageModel("gemini-4-carbon-high")).toBe("gemini-4-carbon");
     expect(canonicalAntigravityUsageModel("gemini-4-argon-low")).toBe("gemini-4-argon");
     expect(canonicalAntigravityUsageModel("gemini-4-argon-medium")).toBe("gemini-4-argon");
     expect(canonicalAntigravityUsageModel("gemini-4-argon-high")).toBe("gemini-4-argon");

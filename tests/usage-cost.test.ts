@@ -266,8 +266,8 @@ describe("resolveMatchedPrice", () => {
     expect(resolveMatchedPrice("openrouter", "anthropic-claude-3.5-sonnet")).toBeNull();
   });
 
-  test("16. shipped overlay membership: 72 keys, including Opus 5 and compatibility prices", () => {
-    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(72);
+  test("16. shipped overlay membership: 76 keys, including Opus 5 and compatibility prices", () => {
+    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(76);
     expect(EXPECTED_PRICE_OVERLAYS.some(row => row.status === "unverified")).toBe(false);
     const keys = new Set(EXPECTED_PRICE_OVERLAYS.map(row => `${row.provider}/${row.modelId}`));
     for (const expected of [
@@ -280,6 +280,10 @@ describe("resolveMatchedPrice", () => {
       "minimax-cn/MiniMax-M2.1-highspeed",
       "deepseek/deepseek-chat",
       "deepseek/deepseek-reasoner",
+      "google-antigravity/gemini-4-carbon",
+      "google-antigravity/gemini-4-carbon-low",
+      "google-antigravity/gemini-4-carbon-medium",
+      "google-antigravity/gemini-4-carbon-high",
       "google-antigravity/gemini-4-argon",
       "google-antigravity/gemini-4-argon-low",
       "google-antigravity/gemini-4-argon-medium",

@@ -53,13 +53,24 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
 };
 
 /**
- * Gemini 4 Argon reasoning tier mapping.
+ * Gemini 4 Carbon and Argon reasoning tier mappings.
  *
- * Antigravity 2.29.0 exposes Gemini 4 Argon in its UI with low, medium, and high
- * reasoning levels (defaulting to medium). On the wire, Cloud Code Assist accepts
- * the canonical `gemini-4-argon` model ID with the tier carried in
- * `generationConfig.thinkingConfig.thinkingLevel`.
+ * Antigravity 2.31.0 exposes Gemini 4 Carbon and Gemini 4 Argon in its UI with low,
+ * medium, and high reasoning levels (defaulting to medium). On the wire,
+ * `daily-cloudcode-pa.googleapis.com` requires the suffixed model IDs
+ * (`gemini-4-carbon-{low,medium,high}`, `gemini-4-argon-{low,medium,high}`) with the
+ * matching tier also carried in `generationConfig.thinkingConfig.thinkingLevel`.
  */
+const CARBON_TIERS: Record<string, string> = {
+  "gemini-4-carbon-low": "low",
+  "gemini-4-carbon-medium": "medium",
+  "gemini-4-carbon-high": "high",
+};
+
+export function carbonAntigravityTier(modelId: string): string | undefined {
+  return Object.hasOwn(CARBON_TIERS, modelId) ? CARBON_TIERS[modelId] : undefined;
+}
+
 const ARGON_TIERS: Record<string, string> = {
   "gemini-4-argon-low": "low",
   "gemini-4-argon-medium": "medium",
@@ -71,7 +82,12 @@ export function argonAntigravityTier(modelId: string): string | undefined {
 }
 
 const ANTIGRAVITY_WIRE_MODELS = [
-  "gemini-4-argon",
+  "gemini-4-carbon-low",
+  "gemini-4-carbon-medium",
+  "gemini-4-carbon-high",
+  "gemini-4-argon-low",
+  "gemini-4-argon-medium",
+  "gemini-4-argon-high",
   "gemini-3.8-flash-tiered",
   "gemini-3.1-flash-lite",
   "gemini-3.1-flash-image",
@@ -112,10 +128,11 @@ function pickerModelIdForDiscoveredWireId(
 }
 
 // ── Effort ladders per collapsed base model ──
-// Gemini models: effort → thinkingLevel on a single wire id.
-// Claude models: effort → thinkingConfig.thinkingLevel (CLIProxyAPI proven pattern).
+// Gemini 3.8 Flash: effort → thinkingLevel on a single `-tiered` wire id.
+// Gemini 4 Carbon/Argon & Claude 5.5: effort → suffixed wire id + thinkingConfig.thinkingLevel.
 export const ANTIGRAVITY_MODEL_EFFORTS: Record<string, string[]> = {
   "gemini-3.8-flash": ["low", "medium", "high"],
+  "gemini-4-carbon": ["low", "medium", "high"],
   "gemini-4-argon": ["low", "medium", "high"],
   "claude-sonnet-5-5": ["low", "medium", "high", "max"],
   "claude-opus-5-5": ["low", "medium", "high", "max"],
@@ -125,11 +142,13 @@ export const ANTIGRAVITY_MODEL_EFFORTS: Record<string, string[]> = {
 
 /**
  * Base models that map reasoning efforts to dedicated suffixed wire model IDs
- * (e.g. claude-sonnet-5-5-high).
+ * (e.g. gemini-4-carbon-medium, gemini-4-argon-medium, claude-sonnet-5-5-high).
  */
-const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; wirePrefix: string; isClaude?: boolean }> = {
-  "claude-sonnet-5-5": { defaultEffort: "high", wirePrefix: "claude-sonnet-5-5", isClaude: true },
-  "claude-opus-5-5": { defaultEffort: "high", wirePrefix: "claude-opus-5-5", isClaude: true },
+const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; wirePrefix: string; sendThinkingLevel?: boolean }> = {
+  "gemini-4-carbon": { defaultEffort: "medium", wirePrefix: "gemini-4-carbon", sendThinkingLevel: true },
+  "gemini-4-argon": { defaultEffort: "medium", wirePrefix: "gemini-4-argon", sendThinkingLevel: true },
+  "claude-sonnet-5-5": { defaultEffort: "high", wirePrefix: "claude-sonnet-5-5", sendThinkingLevel: true },
+  "claude-opus-5-5": { defaultEffort: "high", wirePrefix: "claude-opus-5-5", sendThinkingLevel: true },
 };
 
 /**
@@ -138,7 +157,6 @@ const ANTIGRAVITY_SUFFIXED_BASE_MODELS: Record<string, { defaultEffort: string; 
  */
 const ANTIGRAVITY_THINKING_LEVEL_MODELS: Record<string, string> = {
   "gemini-3.8-flash": "high",
-  "gemini-4-argon": "medium",
 };
 
 // `minimal` is deliberately absent: Google documents it as unsupported for the current
@@ -151,7 +169,6 @@ const ANTIGRAVITY_THINKING_LEVELS = new Set(["low", "medium", "high"]);
  */
 const ANTIGRAVITY_PICKER_TO_WIRE: Record<string, string> = {
   "gemini-3.8-flash": GEMINI_FLASH_WIRE_ID,
-  "gemini-4-argon": "gemini-4-argon",
 };
 
 /** Map a picker-visible base model to its CCA wire ID. Identity when no mapping exists. */
@@ -179,7 +196,10 @@ const ANTIGRAVITY_COMPATIBILITY_MODEL_ALIASES: Record<string, string> = {
     Object.keys(RETIRED_FLASH_TIERS).map(retired => [retired, GEMINI_FLASH_WIRE_ID]),
   ),
   ...Object.fromEntries(
-    Object.keys(ARGON_TIERS).map(argon => [argon, "gemini-4-argon"]),
+    Object.keys(CARBON_TIERS).map(carbon => [carbon, carbon]),
+  ),
+  ...Object.fromEntries(
+    Object.keys(ARGON_TIERS).map(argon => [argon, argon]),
   ),
 };
 
@@ -191,6 +211,7 @@ export const ANTIGRAVITY_MODEL_ALIASES: Record<string, string> = {
 // Picker-visible: collapsed base models only.
 export const ANTIGRAVITY_MODELS = [
   GEMINI_FLASH_CURRENT,
+  "gemini-4-carbon",
   "gemini-4-argon",
   "claude-sonnet-5-5",
   "claude-opus-5-5",
@@ -207,7 +228,14 @@ function isKnownAntigravityPickerModelId(value: string): boolean {
 
 // Context windows from the upstream `:fetchAvailableModels` maxTokens per model.
 const ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "gemini-4-carbon": 1_048_576,
+  "gemini-4-carbon-low": 1_048_576,
+  "gemini-4-carbon-medium": 1_048_576,
+  "gemini-4-carbon-high": 1_048_576,
   "gemini-4-argon": 1_048_576,
+  "gemini-4-argon-low": 1_048_576,
+  "gemini-4-argon-medium": 1_048_576,
+  "gemini-4-argon-high": 1_048_576,
   "gemini-3.8-flash-tiered": 1_048_576,
   "gemini-3.1-flash-lite": 1_048_576,
   "gemini-3.1-flash-image": 1_048_576,
@@ -225,6 +253,7 @@ const ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 export const ANTIGRAVITY_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // Collapsed base IDs — explicit entries for the picker.
   "gemini-3.8-flash": 1_048_576,
+  "gemini-4-carbon": 1_048_576,
   "gemini-4-argon": 1_048_576,
   "claude-sonnet-5-5": 250_000,
   "claude-opus-5-5": 250_000,
@@ -244,6 +273,7 @@ export const ANTIGRAVITY_MODEL_INPUT_MODALITIES: Record<string, string[]> = {
   // catalog normalizes `input_modalities` against a closed enum. Advertising a modality
   // the wire cannot carry would be a promise we break at request time.
   "gemini-3.8-flash": ["text", "image"],
+  "gemini-4-carbon": ["text", "image"],
   "gemini-4-argon": ["text", "image"],
   "claude-sonnet-5-5": ["text", "image"],
   "claude-opus-5-5": ["text", "image"],
@@ -329,14 +359,17 @@ export function parseAntigravityAvailableModels(
   for (const wireId of ids) {
     const info = antigravityRecord(models[wireId]);
     if (!info || available.has(wireId)) continue;
+    // Non-eligible subscription tiers receive `*-disabled` placeholder entries
+    // (with `disabled: true`) in agentModelSorts; never publish them as callable models.
+    if (info.disabled === true || wireId.endsWith("-disabled")) continue;
     // Legacy compatibility aliases are deliberately routed to newer wire ids for saved
     // selections. They are not safe as independently discovered picker rows, except
-    // active Argon tier IDs which CCA returns in agentModelSorts and which collapse
-    // into the canonical `gemini-4-argon` picker row below.
+    // active Carbon/Argon tier IDs which CCA returns in agentModelSorts and which collapse
+    // into the canonical `gemini-4-carbon` / `gemini-4-argon` picker rows below.
     const alias = Object.hasOwn(ANTIGRAVITY_MODEL_ALIASES, wireId)
       ? ANTIGRAVITY_MODEL_ALIASES[wireId]
       : undefined;
-    if (alias && alias !== wireId && !argonAntigravityTier(wireId)) continue;
+    if (alias && alias !== wireId && !carbonAntigravityTier(wireId) && !argonAntigravityTier(wireId)) continue;
     available.set(wireId, info);
   }
 
@@ -389,12 +422,22 @@ export function resolveAntigravityEffortWireModel(
   modelId: string,
   effort?: string,
 ): { wireModelId: string; thinkingLevel?: string } {
-  // Rule -1: Argon model tier mapping — Antigravity resolves suffixed tiers to canonical gemini-4-argon.
+  // Rule -1: Carbon and Argon tier mappings — route suffixed tier IDs to their
+  // corresponding suffixed wire model IDs + thinkingLevel.
+  const carbonTier = carbonAntigravityTier(modelId);
+  if (carbonTier) {
+    const level = effort ? resolveAntigravityThinkingLevel(effort) ?? carbonTier : carbonTier;
+    return {
+      wireModelId: `gemini-4-carbon-${level}`,
+      thinkingLevel: level,
+    };
+  }
   const argonTier = argonAntigravityTier(modelId);
   if (argonTier) {
+    const level = effort ? resolveAntigravityThinkingLevel(effort) ?? argonTier : argonTier;
     return {
-      wireModelId: "gemini-4-argon",
-      thinkingLevel: effort ? resolveAntigravityThinkingLevel(effort) ?? argonTier : argonTier,
+      wireModelId: `gemini-4-argon-${level}`,
+      thinkingLevel: level,
     };
   }
 
@@ -424,14 +467,14 @@ export function resolveAntigravityEffortWireModel(
     };
   }
 
-  // Rule 2: base models with suffixed wire models for effort levels (claude-5.5 series).
+  // Rule 2: base models with suffixed wire models for effort levels (gemini-4-carbon, gemini-4-argon, claude-5.5 series).
   const suffixed = ANTIGRAVITY_SUFFIXED_BASE_MODELS[modelId];
   if (suffixed) {
     const level = effort ? resolveAntigravityThinkingLevel(effort) ?? suffixed.defaultEffort : suffixed.defaultEffort;
     const wireModelId = `${suffixed.wirePrefix}-${level}`;
     return {
       wireModelId,
-      ...(suffixed.isClaude ? { thinkingLevel: level } : {}),
+      ...(suffixed.sendThinkingLevel ? { thinkingLevel: level } : {}),
     };
   }
 
@@ -465,6 +508,7 @@ const ANTIGRAVITY_USAGE_BASE_BY_ID: Record<string, string> = (() => {
     }
   }
   for (const effort of ["low", "medium", "high"]) {
+    rev[`gemini-4-carbon-${effort}`] = "gemini-4-carbon";
     rev[`gemini-4-argon-${effort}`] = "gemini-4-argon";
   }
   // Historical Gemini 3.1 Pro wire and alias IDs collapse to `gemini-3.1-pro` so
