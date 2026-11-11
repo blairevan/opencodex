@@ -126,9 +126,10 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
   { provider: "google-antigravity", modelId: "gemini-3.7-flash-low", cost4: GEMINI_37_FLASH, source: "derived: retired 3.7 Flash tier", verifiedAt: "2026-10-18", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-3.7-flash-medium", cost4: GEMINI_37_FLASH, source: "derived: retired 3.7 Flash tier", verifiedAt: "2026-10-18", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-3.7-flash-high", cost4: GEMINI_37_FLASH, source: "derived: retired 3.7 Flash tier", verifiedAt: "2026-10-18", status: "verified-derived" },
-  // Retained after the 3.6 retirement: historical usage.jsonl rows still carry these
-  // ids, and dropping the row would silently zero the cost of requests already made.
+  // Retained after the 3.6 / 3.1-pro retirement: historical usage.jsonl rows still carry
+  // these ids, and dropping the row would silently zero the cost of requests already made.
   { provider: "google-antigravity", modelId: "gemini-3.6-flash", cost4: GEMINI_36_FLASH, source: `collapsed base ID ${GEMINI_PRICING}`, verifiedAt: "2026-07-22", status: "verified" },
+  { provider: "google-antigravity", modelId: "gemini-3.1-pro", cost4: GEMINI_31_PRO, source: `collapsed base ID ${GEMINI_PRICING}`, verifiedAt: "2026-07-22", status: "verified" },
   // OpenAI GPT-5.6 `-pro` virtual selections. The virtual resolver keeps the SELECTED id in
   // the usage log and records the wire model separately, and cost resolution deliberately
   // does not fall back through resolvedModel — so without these rows every `-pro` request
@@ -142,6 +143,9 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
   // verified-derived. Blue deliberately reuses GPT56_SOL rather than duplicating the tuple.
   { provider: "openai-apikey", modelId: "daybreak-red-latest", cost4: DAYBREAK_RED, source: `alias of gpt-5.6-cyber ${OPENAI_GPT56_PRICING}`, verifiedAt: "2026-08-11", status: "verified-derived" },
   { provider: "openai-apikey", modelId: "daybreak-blue-latest", cost4: GPT56_SOL, source: `alias of gpt-5.6-sol ${OPENAI_GPT56_PRICING}`, verifiedAt: "2026-08-11", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-3.1-pro-low", cost4: GEMINI_31_PRO, source: `derived: gemini-3.1-pro (<=200k tier) ${GEMINI_PRICING}`, verifiedAt: "2026-07-20", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-3.1-pro-high", cost4: GEMINI_31_PRO, source: `derived: gemini-3.1-pro (<=200k tier) ${GEMINI_PRICING}`, verifiedAt: "2026-07-20", status: "verified-derived" },
+  { provider: "google-antigravity", modelId: "gemini-pro-agent", cost4: GEMINI_31_PRO, source: `wire id for gemini-3.1-pro high ${GEMINI_PRICING}`, verifiedAt: "2026-07-23", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-3.6-flash-low", cost4: GEMINI_36_FLASH, source: `derived: gemini-3.6-flash ${GEMINI_PRICING}`, verifiedAt: "2026-07-22", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-3.6-flash-medium", cost4: GEMINI_36_FLASH, source: `derived: gemini-3.6-flash ${GEMINI_PRICING}`, verifiedAt: "2026-07-22", status: "verified-derived" },
   { provider: "google-antigravity", modelId: "gemini-3.6-flash-high", cost4: GEMINI_36_FLASH, source: `derived: gemini-3.6-flash ${GEMINI_PRICING}`, verifiedAt: "2026-07-22", status: "verified-derived" },
@@ -154,6 +158,7 @@ export const EXPECTED_PRICE_OVERLAYS: readonly ExpectedPriceOverlay[] = [
   { provider: "google", modelId: "gemini-3.6-flash", cost4: GEMINI_36_FLASH, source: GEMINI_PRICING, verifiedAt: "2026-07-22", status: "verified" },
   // Developer API row: the price IS published for this surface, so `verified`.
   { provider: "google", modelId: "gemini-3.7-flash", cost4: GEMINI_37_FLASH, source: GEMINI_37_PRICING, verifiedAt: "2026-08-14", status: "verified" },
+  { provider: "google-antigravity", modelId: "gemini-3.1-pro-preview", cost4: GEMINI_31_PRO, source: GEMINI_PRICING, verifiedAt: "2026-07-20", status: "verified" },
   // Antigravity-bundled third-party models — derived from the underlying vendor's
   // official API price (Antigravity itself bills via subscription quota).
   { provider: "google-antigravity", modelId: "claude-sonnet-4-6", cost4: CLAUDE_SONNET_46, source: `anthropic official Claude Sonnet 4.6 ${ANTHROPIC_PRICING}`, verifiedAt: "2026-07-23", status: "verified" },

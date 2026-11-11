@@ -266,8 +266,8 @@ describe("resolveMatchedPrice", () => {
     expect(resolveMatchedPrice("openrouter", "anthropic-claude-3.5-sonnet")).toBeNull();
   });
 
-  test("16. shipped overlay membership: 55 keys, including Opus 5 and compatibility prices", () => {
-    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(55);
+  test("16. shipped overlay membership: 72 keys, including Opus 5 and compatibility prices", () => {
+    expect(EXPECTED_PRICE_OVERLAYS.length).toBe(72);
     expect(EXPECTED_PRICE_OVERLAYS.some(row => row.status === "unverified")).toBe(false);
     const keys = new Set(EXPECTED_PRICE_OVERLAYS.map(row => `${row.provider}/${row.modelId}`));
     for (const expected of [
@@ -280,6 +280,19 @@ describe("resolveMatchedPrice", () => {
       "minimax-cn/MiniMax-M2.1-highspeed",
       "deepseek/deepseek-chat",
       "deepseek/deepseek-reasoner",
+      "google-antigravity/gemini-4-argon",
+      "google-antigravity/gemini-4-argon-low",
+      "google-antigravity/gemini-4-argon-medium",
+      "google-antigravity/gemini-4-argon-high",
+      "google-antigravity/gemini-3.1-flash-lite",
+      "google-antigravity/claude-sonnet-5-5",
+      "google-antigravity/claude-sonnet-5-5-low",
+      "google-antigravity/claude-sonnet-5-5-medium",
+      "google-antigravity/claude-sonnet-5-5-high",
+      "google-antigravity/claude-opus-5-5",
+      "google-antigravity/claude-opus-5-5-low",
+      "google-antigravity/claude-opus-5-5-medium",
+      "google-antigravity/claude-opus-5-5-high",
       "google-antigravity/gemini-3.1-pro-low",
       "google-antigravity/gemini-3.1-pro-high",
       "google-antigravity/gemini-pro-agent",

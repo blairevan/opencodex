@@ -64,7 +64,7 @@ ocx account refresh google-antigravity --json
    - `ANTIGRAVITY_WIRE_MODELS`：添加云端实际接收的 wire 模型 ID。
    - `ANTIGRAVITY_MODELS`：添加在 picker 中展示的基础模型 ID。
    - `ANTIGRAVITY_MODEL_EFFORTS`：为支持推理梯度的模型配置 `["low", "medium", "high", ...]`。
-   - **占位/过渡模型对齐规则**：当 Antigravity APP 客户端在 UI 中引入新代际模型（如 `gemini-4-argon`），但云端 CCA 尚未部署独立 wire 实体时，客户端在底层会将其映射至当前主力 Flash 线上传输 ID（如 `gemini-3.8-flash-tiered`），并携带相应 `thinkingLevel`。opencodex 必须配置 `ARGON_TIERS` 与 `ANTIGRAVITY_PICKER_TO_WIRE` 映射，保持与官方客户端一致的路由行为，防止直接向云端发送未开放实体导致 404 NOT_FOUND。
+   - **单 Wire ID 档位折叠规则**：当 Antigravity APP 客户端在 UI 中将模型按 `-low`、`-medium`、`-high` 拆分为多个推理档位，但底层 `codeassistclient` 封包发往云端 CCA 时统一使用单一基础 Wire ID（如 `gemini-4-argon` 或 `gemini-3.8-flash-tiered`）并通过 `generationConfig.thinkingConfig.thinkingLevel` 传递思考强度时，opencodex 必须在 `ARGON_TIERS`、`ANTIGRAVITY_THINKING_LEVEL_MODELS` 与 `ANTIGRAVITY_PICKER_TO_WIRE` 中对齐该映射，避免直接将带档位后缀的模型名作为 Wire ID 发送至云端导致 404 NOT_FOUND。
    - `ANTIGRAVITY_SUFFIXED_BASE_MODELS` 与 `resolveAntigravityEffortWireModel`：若新模型使用后缀 wire ID，定义默认档位与前缀映射。
    - `ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS` 与 `ANTIGRAVITY_MODEL_CONTEXT_WINDOWS`：填入对应的上下文窗口大小（如 1M tokens）。
    - `ANTIGRAVITY_MODEL_INPUT_MODALITIES`：配置输入模态（如 `["text", "image"]`）。

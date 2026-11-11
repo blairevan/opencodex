@@ -417,9 +417,45 @@ describe("google provider hardening", () => {
     // Antigravity used to encode the tier in the wire id, so it sent no thinkingConfig.
     // Now that Google has retired the suffixed 3.6 ids, that tier has nowhere to live
     // except an explicit thinkingLevel on the current model.
-    expect(JSON.parse(antigravity.body).model).toBe("gemini-3.7-flash-tiered");
+    expect(JSON.parse(antigravity.body).model).toBe("gemini-3.8-flash-tiered");
     expect(JSON.parse(antigravity.body).request.generationConfig.thinkingConfig)
       .toEqual({ thinkingLevel: "high" });
+  });
+
+  test("Antigravity falls back from daily-cloudcode-pa to cloudcode-pa on 404", async () => {
+    const { fetchAntigravityWithRetry } = await import("../src/adapters/google-http");
+    const originalFetch = globalThis.fetch;
+    const requestedUrls: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedUrls.push(url);
+      if (url.includes("daily-cloudcode-pa.googleapis.com")) {
+        return new Response(JSON.stringify({ error: { code: 404, message: "Requested entity was not found." } }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ response: { candidates: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const res = await fetchAntigravityWithRetry({
+        url: "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gemini-4-argon" }),
+      });
+      expect(res.status).toBe(200);
+      expect(requestedUrls).toEqual([
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+        "https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   test("provider-wide effort ladder drives thinkingLevel for a non-image model", async () => {

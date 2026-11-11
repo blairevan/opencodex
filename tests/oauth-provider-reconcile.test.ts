@@ -52,6 +52,10 @@ describe("OAuth provider reconciliation", () => {
     expect(provider.defaultModel).toBe("gemini-3.8-flash");
     expect(provider.models).toEqual([
       "gemini-3.8-flash",
+      "gemini-4-argon",
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "gemini-3.1-flash-lite",
       "gemini-3.1-flash-image",
       "claude-sonnet-4-6",
       "claude-opus-4-6-thinking",
@@ -108,7 +112,7 @@ describe("OAuth provider reconciliation", () => {
 
     upsertOAuthProvider(config, "google-antigravity");
     expect(config.providers["google-antigravity"].liveModels).toBe(true);
-    expect(config.providers["google-antigravity"].models).toHaveLength(5);
+    expect(config.providers["google-antigravity"].models).toHaveLength(9);
   });
 
   test("preserves an explicit Antigravity static opt-out without the legacy migration marker", () => {
