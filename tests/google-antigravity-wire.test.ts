@@ -145,6 +145,11 @@ describe("antigravity CCA envelope", () => {
       "gemini-3.8-flash-high",
     ]))?.map(model => model.id)).toEqual(["gemini-3.8-flash"]);
     expect(parseAntigravityAvailableModels(payload([
+      "gemini-4-argon-low",
+      "gemini-4-argon-medium",
+      "gemini-4-argon-high",
+    ]))?.map(model => model.id)).toEqual(["gemini-4-argon"]);
+    expect(parseAntigravityAvailableModels(payload([
       "future-flash-low",
       "future-flash-medium",
       "future-flash-high",
@@ -877,6 +882,13 @@ describe("canonicalAntigravityUsageModel", () => {
     expect(canonicalAntigravityUsageModel("gemini-3.5-flash-mid")).toBe("gemini-3.5-flash-mid");
     expect(canonicalAntigravityUsageModel("gemini-3.6-flash-high")).toBe("gemini-3.6-flash-high");
     expect(canonicalAntigravityUsageModel("gemini-3.7-flash-high")).toBe("gemini-3.7-flash-high");
+    expect(canonicalAntigravityUsageModel("gemini-4-argon-low")).toBe("gemini-4-argon");
+    expect(canonicalAntigravityUsageModel("gemini-4-argon-medium")).toBe("gemini-4-argon");
+    expect(canonicalAntigravityUsageModel("gemini-4-argon-high")).toBe("gemini-4-argon");
+    expect(canonicalAntigravityUsageModel("claude-sonnet-5-5-high")).toBe("claude-sonnet-5-5");
+    expect(canonicalAntigravityUsageModel("claude-opus-5-5-medium")).toBe("claude-opus-5-5");
+    expect(canonicalAntigravityUsageModel("gemini-pro-agent")).toBe("gemini-3.1-pro");
+    expect(canonicalAntigravityUsageModel("gemini-3.1-pro-low")).toBe("gemini-3.1-pro");
     expect(canonicalAntigravityUsageModel("claude-opus-4-6-thinking")).toBe("claude-opus-4-6-thinking");
     expect(canonicalAntigravityUsageModel("unknown-model")).toBe("unknown-model");
   });

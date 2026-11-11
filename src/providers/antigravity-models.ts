@@ -56,9 +56,9 @@ const RETIRED_FLASH_TIERS: Record<string, string> = {
  * Gemini 4 Argon reasoning tier mapping.
  *
  * Antigravity 2.29.0 exposes Gemini 4 Argon in its UI with low, medium, and high
- * reasoning levels (defaulting to medium), but Google Cloud Code Assist routes
- * these calls on the wire to the current Flash generation (`gemini-3.8-flash-tiered`)
- * with the corresponding `thinkingLevel`.
+ * reasoning levels (defaulting to medium). On the wire, Cloud Code Assist accepts
+ * the canonical `gemini-4-argon` model ID with the tier carried in
+ * `generationConfig.thinkingConfig.thinkingLevel`.
  */
 const ARGON_TIERS: Record<string, string> = {
   "gemini-4-argon-low": "low",
@@ -207,8 +207,16 @@ function isKnownAntigravityPickerModelId(value: string): boolean {
 
 // Context windows from the upstream `:fetchAvailableModels` maxTokens per model.
 const ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  "gemini-4-argon": 1_048_576,
   "gemini-3.8-flash-tiered": 1_048_576,
+  "gemini-3.1-flash-lite": 1_048_576,
   "gemini-3.1-flash-image": 1_048_576,
+  "claude-sonnet-5-5-low": 250_000,
+  "claude-sonnet-5-5-medium": 250_000,
+  "claude-sonnet-5-5-high": 250_000,
+  "claude-opus-5-5-low": 250_000,
+  "claude-opus-5-5-medium": 250_000,
+  "claude-opus-5-5-high": 250_000,
   "claude-sonnet-4-6": 250_000,
   "claude-opus-4-6-thinking": 250_000,
   "gpt-oss-120b-medium": 131_072,
@@ -217,6 +225,9 @@ const ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 export const ANTIGRAVITY_MODEL_CONTEXT_WINDOWS: Record<string, number> = {
   // Collapsed base IDs — explicit entries for the picker.
   "gemini-3.8-flash": 1_048_576,
+  "gemini-4-argon": 1_048_576,
+  "claude-sonnet-5-5": 250_000,
+  "claude-opus-5-5": 250_000,
   // Wire IDs and aliases via derivation.
   ...ANTIGRAVITY_WIRE_MODEL_CONTEXT_WINDOWS,
   ...Object.fromEntries(
@@ -319,11 +330,13 @@ export function parseAntigravityAvailableModels(
     const info = antigravityRecord(models[wireId]);
     if (!info || available.has(wireId)) continue;
     // Legacy compatibility aliases are deliberately routed to newer wire ids for saved
-    // selections. They are not safe as independently discovered picker rows.
+    // selections. They are not safe as independently discovered picker rows, except
+    // active Argon tier IDs which CCA returns in agentModelSorts and which collapse
+    // into the canonical `gemini-4-argon` picker row below.
     const alias = Object.hasOwn(ANTIGRAVITY_MODEL_ALIASES, wireId)
       ? ANTIGRAVITY_MODEL_ALIASES[wireId]
       : undefined;
-    if (alias && alias !== wireId) continue;
+    if (alias && alias !== wireId && !argonAntigravityTier(wireId)) continue;
     available.set(wireId, info);
   }
 
@@ -411,7 +424,7 @@ export function resolveAntigravityEffortWireModel(
     };
   }
 
-  // Rule 2: base models with suffixed wire models for effort levels (gemini-4-argon, claude-5.5 series).
+  // Rule 2: base models with suffixed wire models for effort levels (claude-5.5 series).
   const suffixed = ANTIGRAVITY_SUFFIXED_BASE_MODELS[modelId];
   if (suffixed) {
     const level = effort ? resolveAntigravityThinkingLevel(effort) ?? suffixed.defaultEffort : suffixed.defaultEffort;
@@ -453,6 +466,17 @@ const ANTIGRAVITY_USAGE_BASE_BY_ID: Record<string, string> = (() => {
   }
   for (const effort of ["low", "medium", "high"]) {
     rev[`gemini-4-argon-${effort}`] = "gemini-4-argon";
+  }
+  // Historical Gemini 3.1 Pro wire and alias IDs collapse to `gemini-3.1-pro` so
+  // existing usage.jsonl rows remain aggregated under their canonical base model.
+  for (const proId of [
+    "gemini-3.1-pro",
+    "gemini-pro-agent",
+    "gemini-3.1-pro-low",
+    "gemini-3.1-pro-high",
+    "gemini-3.1-pro-preview",
+  ]) {
+    rev[proId] = "gemini-3.1-pro";
   }
   // Retired ids keep their OWN identity for usage aggregation, overriding the alias
   // pass above. Routing sends new 3.7 calls to 3.8, but a usage row written months ago

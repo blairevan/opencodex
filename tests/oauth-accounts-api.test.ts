@@ -533,6 +533,7 @@ describe("multiauth accounts API", () => {
           authMode: "oauth",
           baseUrl: "https://daily-cloudcode-pa.googleapis.com",
           liveModels: true,
+          models: [],
         },
       },
     } as unknown as OcxConfig;
