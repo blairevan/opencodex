@@ -57,7 +57,7 @@ ocx account refresh google-antigravity --json
 如果确认有新模型加入或版本迭代，依次检查并修改下列文件：
 
 1. **版本与子客户端指纹更新**：
-   在 [src/adapters/client-fingerprint.ts](/opt/app/aitools/opencodex/src/adapters/client-fingerprint.ts:45) 中更新 `ANTIGRAVITY_IDE_VERSION` 与 `ANTIGRAVITY_IDE_SUBCLIENT`（如 `antigravity/hub/2.31.0`）。
+   在 [src/adapters/client-fingerprint.ts](/opt/app/aitools/opencodex/src/adapters/client-fingerprint.ts:45) 中更新 `ANTIGRAVITY_IDE_VERSION` 与 `ANTIGRAVITY_IDE_SUBCLIENT`（如 `antigravity/hub/2.31.2`）。
 
 2. **模型注册与路由映射**：
    在 [src/providers/antigravity-models.ts](/opt/app/aitools/opencodex/src/providers/antigravity-models.ts:1) 中：
